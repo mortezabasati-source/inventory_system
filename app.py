@@ -14,10 +14,17 @@ SPREADSHEET_NAME = "Inventory_System_DB"
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="SmartLager - Lager & Produktionsportal", 
-    page_icon="📦", 
+    page_title="SmartLager",
+    page_icon="logo.png",
     layout="wide"
 )
+
+# --- Custom Meta Tags for PWA ---
+st.markdown("""
+<meta name="apple-mobile-web-app-title" content="SmartLager">
+<meta name="application-name" content="SmartLager">
+<link rel="apple-touch-icon" href="logo.png">
+""", unsafe_allow_html=True)
 
 st.title("📦 SmartLager")
 st.caption("Intelligent lager- och produktionshantering")
