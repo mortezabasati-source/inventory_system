@@ -1,0 +1,23 @@
+# ================================
+# Streamlit-specific files
+# ================================
+# Ignore the directory containing local secrets and configurations
+.streamlit/
+
+# ================================
+# Python general
+# ================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# IDE configuration files
+.vscode/
+.idea/
