@@ -12,6 +12,9 @@ from modules.gsheet_connector import load_sheet_data, append_rows_to_sheet
 
 SPREADSHEET_NAME = "Inventory_System_DB"
 
+# Safe retrieval of APP_SECRET_KEY from secrets
+APP_SECRET_KEY = st.secrets.get("APP_SECRET_KEY", None)
+
 # --- Page Configuration ---
 st.set_page_config(
     page_title="SmartLager",
@@ -28,6 +31,7 @@ st.markdown("""
 
 st.title("📦 SmartLager")
 st.caption("Intelligent lager- och produktionshantering")
+
 
 # --- Global Custom CSS Injection (Eataway Theme & 3D Keyboard Tabs) ---
 st.markdown("""
@@ -88,6 +92,7 @@ def load_all_data():
     return loaded_data
 
 data = load_all_data()
+
 # Initialize session state for batch processing baskets
 if 'inbound_basket' not in st.session_state:
     st.session_state['inbound_basket'] = []
@@ -134,7 +139,6 @@ if selected_page == "📥 Registrera Inleverans":
         col_submit1, col_submit2 = st.columns([3, 1])
         with col_submit1:
             try:
-                # Safely get 'Vikt/Pcs', defaulting to 1.0 if missing, empty, or non-numeric
                 vikt_pcs = float(selected_item.get('Vikt/Pcs') or 1.0)
             except (ValueError, TypeError):
                 vikt_pcs = 1.0
@@ -175,13 +179,22 @@ if selected_page == "📥 Registrera Inleverans":
                 st.rerun()
 
         st.markdown("---")
+        
+        # Security Key Verification
+        secret_key_inbound = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_inbound")
+        
         action_cols = st.columns(2)
         if action_cols[0].button("💾 Spara alla poster till Google Sheets", type="primary", use_container_width=True):
-            append_rows_to_sheet(SPREADSHEET_NAME, "Inbound_Log", st.session_state.inbound_basket)
-            st.success("Alla inleveranser har registrerats!")
-            st.session_state.inbound_basket = []
-            st.cache_data.clear()
-            st.rerun()
+            if not APP_SECRET_KEY:
+                st.error("⚠️ APP_SECRET_KEY در Secrets تعریف نشده است!")
+            elif secret_key_inbound.strip() == str(APP_SECRET_KEY).strip():
+                append_rows_to_sheet(SPREADSHEET_NAME, "Inbound_Log", st.session_state.inbound_basket)
+                st.session_state.inbound_basket = []
+                st.cache_data.clear()
+                st.success("✅ Alla inleveranser har registrerats!")
+                st.rerun()
+            else:
+                st.error("⛔ Felaktig säkerhetsnyckel. Posterna sparades inte.")
             
         if action_cols[1].button("🗑️ Töm hela listan", use_container_width=True):
             st.session_state.inbound_basket = []
@@ -255,13 +268,22 @@ elif selected_page == "🏭 Registrera Daglig Produktion":
                 st.rerun()
 
         st.markdown("---")
+        
+        # Security Key Verification
+        secret_key_prod = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_prod")
+        
         action_cols = st.columns(2)
         if action_cols[0].button("💾 Spara all produktion till Google Sheets", type="primary", use_container_width=True):
-            append_rows_to_sheet(SPREADSHEET_NAME, "Production_Log", st.session_state.production_basket)
-            st.success("All produktion har registrerats!")
-            st.session_state.production_basket = []
-            st.cache_data.clear()
-            st.rerun()
+            if not APP_SECRET_KEY:
+                st.error("⚠️ APP_SECRET_KEY در Secrets تعریف نشده است!")
+            elif secret_key_prod.strip() == str(APP_SECRET_KEY).strip():
+                append_rows_to_sheet(SPREADSHEET_NAME, "Production_Log", st.session_state.production_basket)
+                st.session_state.production_basket = []
+                st.cache_data.clear()
+                st.success("✅ All produktion har registrerats!")
+                st.rerun()
+            else:
+                st.error("⛔ Felaktig säkerhetsnyckel. Posterna sparades inte.")
             
         if action_cols[1].button("🗑️ Töm hela listan", use_container_width=True):
             st.session_state.production_basket = []
@@ -293,16 +315,12 @@ elif selected_page == "📊 Aktuellt Lagersaldo":
     
     search_term = st.text_input("🔍 Sök efter artikelnamn eller SI-kod:")
     
-    # Start with the full dataframe
     filtered_df = stock_df
     if search_term and not stock_df.empty:
-        # Apply filter if a search term is provided
-        # Ensure the series are string-typed for .str.contains to avoid type-checker errors
         mask1 = stock_df['Insatsvara'].astype('string').str.contains(search_term, case=False, na=False)
         mask2 = stock_df['Sl'].astype('string').str.contains(search_term, case=False, na=False)
         filtered_df = stock_df[mask1 | mask2]
     
-    # Define the columns to display and their new names for the UI
     COLUMN_MAPPING = {
         'Sl': 'SI-kod',
         'Insatsvara': 'Artikel',
@@ -313,45 +331,30 @@ elif selected_page == "📊 Aktuellt Lagersaldo":
         'Current_Stock': 'Aktuellt Saldo'
     }
     
-    # Robustly select only the columns that exist in the dataframe to prevent KeyErrors
-    # This also satisfies linters that warn about potential errors.
     columns_to_show = [col for col in COLUMN_MAPPING.keys() if col in filtered_df.columns]
     
-    # Select the existing columns for display
-    # Ensure filtered_df is a DataFrame before using .loc and .copy to satisfy type-checkers
-    import pandas as pd  # type: ignore[import]
-
-    # Ensure we always produce a DataFrame to satisfy type-checkers and avoid
-    # attribute errors where the variable might be inferred as a dict.
     if isinstance(filtered_df, pd.DataFrame):
-        # Avoid using a variable name in the type annotation to prevent linter/type errors
         display_df = filtered_df[columns_to_show].copy()
     else:
-        # Fallback: create an empty DataFrame with the expected columns
         display_df = pd.DataFrame(columns=columns_to_show).astype(object)
-    # Safely rename columns only if display_df is a DataFrame (not a Series)
+
     if isinstance(display_df, pd.DataFrame):
         display_df.columns = [COLUMN_MAPPING.get(col, col) for col in display_df.columns]
 
     def style_low_stock(row):
-        """Applies a highlight style to rows with zero or negative stock."""
         if row['Aktuellt Saldo'] <= 0:
             return ['background-color: #FFD2D2'] * len(row)
         return [''] * len(row)
 
-    # Apply styling to highlight low-stock items
     styled_df = display_df.style.apply(style_low_stock, axis=1)
 
-    # Prepare options for the SelectboxColumn safely, preventing errors on an empty dataframe
     enhet_options = []
     if not display_df.empty and 'Enhet' in display_df.columns:
         enhet_options = display_df['Enhet'].unique().tolist()
 
     st.dataframe(
         styled_df,
-        # The order is now implicitly handled by the COLUMN_MAPPING dictionary keys
         column_config={
-            # We configure the original column names before they are displayed with new names
             "Startsaldo": st.column_config.NumberColumn(format="%,.2f g"),
             "Inlevererat": st.column_config.NumberColumn(format="%,.2f g"),
             "Förbrukat": st.column_config.NumberColumn(format="%,.2f g"),
