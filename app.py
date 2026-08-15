@@ -73,6 +73,41 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- Help Text Dictionary (i18n) ---
+HELP_TEXTS = {
+    # Inbound Page
+    "inbound_date": "Välj det datum då varorna togs emot i lagret. Klicka för att öppna kalendern.",
+    "inbound_item": "Välj den råvara (insatsvara) som har levererats. Listan visar SI-kod, namn och typ.",
+    "inbound_pkg_qty": "Ange antalet mottagna förpackningar (t.ex. kartonger, säckar). Använd heltal.",
+    "inbound_secret": "Ange den hemliga nyckeln för att bekräfta och spara alla poster i listan till databasen.",
+    
+    # Production Page
+    "prod_date": "Välj det datum då produktionen ägde rum.",
+    "prod_item": "Välj den färdiga produkt som har tillverkats. Listan baseras på produkter definierade i BOM.",
+    "prod_qty": "Ange det totala antalet enheter som producerats av den valda produkten.",
+    "prod_secret": "Ange den hemliga nyckeln för att bekräfta och spara alla produktionsposter till databasen.",
+
+    # Add New Item Page
+    "new_insats_name": "Ange det fullständiga namnet på den nya råvaran (t.ex. 'Vetemjöl Special').",
+    "new_insats_type": "Välj en befintlig typ (t.ex. 'g', 'st') eller välj '--- Ange ny ---' för att skapa en ny.",
+    "new_insats_new_type": "Om du valt '--- Ange ny ---', skriv in den nya typen/enheten här (t.ex. 'ml', 'kg').",
+    "new_insats_vikt_pcs": "Om varan hanteras i vikt, ange basvikten per enhet (t.ex. vikten för 1 st). Lämna 0 om ej relevant.",
+    "new_insats_initial_stock": "Ange startsaldot för denna vara. Detta är antalet förpackningar du har från början.",
+    "new_insats_price": "Ange inköpspriset per förpackning/enhet.",
+    "new_insats_supplier": "Välj en befintlig leverantör eller välj '--- Ange ny ---' för att lägga till en ny.",
+    "new_insats_new_supplier": "Om du valt '--- Ange ny ---', skriv in namnet på den nya leverantören här.",
+    "new_insats_secret": "Ange den hemliga nyckeln för att spara de nya råvarorna till databasen.",
+
+    # Add New Product Page
+    "new_prod_id": "Ange ett unikt ID för den nya produkten (t.ex. 'PROD-105'). Detta kan inte ändras senare.",
+    "new_prod_name": "Ange det fullständiga namnet på den nya färdiga produkten (t.ex. 'Kanelbulle Stor').",
+    "new_prod_bom_item": "Välj en råvara som ingår i produkten.",
+    "new_prod_bom_unit": "Ange enheten för förbrukningen (standard är 'g' för gram).",
+    "new_prod_bom_consumption": "Ange hur mycket av råvaran (i vald enhet) som går åt för att tillverka EN enhet av produkten.",
+    "new_prod_secret": "Ange den hemliga nyckeln för att spara den nya produkten och dess materialförteckning (BOM).",
+    "search_stock": "Sök fritt på artikelnamn eller SI-kod för att snabbt filtrera lagerlistan."
+}
+
 def load_all_data():
     """Loads all necessary data from Google Sheets, with individual error handling."""
     data_sheets = {
@@ -139,7 +174,7 @@ if selected_page == "📥 Registrera Inleverans":
     with st.form("inbound_form", clear_on_submit=True):
         col1, col2, col3 = st.columns([1, 3, 1])
         with col1:
-            entry_date = st.date_input("Inleveransdatum", date.today())
+            entry_date = st.date_input("Inleveransdatum", date.today(), help=HELP_TEXTS["inbound_date"])
         
         def create_inbound_label(row):
             label = f"{row['Sl']} - {row['Insatsvara']} ({row['Typ']}"
@@ -151,11 +186,11 @@ if selected_page == "📥 Registrera Inleverans":
 
         with col2:
             item_options = {create_inbound_label(row): row for _, row in data['df_insats'].iterrows()}
-            selected_item_str = st.selectbox("Välj artikel / SI-kod", options=list(item_options.keys()))
+            selected_item_str = st.selectbox("Välj artikel / SI-kod", options=list(item_options.keys()), help=HELP_TEXTS["inbound_item"])
             selected_item = item_options[selected_item_str]
         
         with col3:
-            pkg_qty = st.number_input("Antal förpackningar", min_value=1.0, step=1.0)
+            pkg_qty = st.number_input("Antal förpackningar", min_value=1.0, step=1.0, help=HELP_TEXTS["inbound_pkg_qty"])
         
         st.markdown("---")
         col_submit1, col_submit2 = st.columns([3, 1])
@@ -203,7 +238,7 @@ if selected_page == "📥 Registrera Inleverans":
         st.markdown("---")
         
         # Security Key Verification
-        secret_key_inbound = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_inbound")
+        secret_key_inbound = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_inbound", help=HELP_TEXTS["inbound_secret"])
         
         action_cols = st.columns(2)
         if action_cols[0].button("💾 Spara alla poster till Google Sheets", type="primary", use_container_width=True):
@@ -232,7 +267,7 @@ elif selected_page == "🏭 Registrera Daglig Produktion":
     with st.form("production_form", clear_on_submit=True):
         col1, col2, col3 = st.columns([1, 3, 1])
         with col1:
-            prod_date = st.date_input("Produktionsdatum", date.today())
+            prod_date = st.date_input("Produktionsdatum", date.today(), help=HELP_TEXTS["prod_date"])
         
         unique_product_ids = data['df_bom']['Produkt_id'].unique() if not data['df_bom'].empty else []
         
@@ -249,14 +284,14 @@ elif selected_page == "🏭 Registrera Daglig Produktion":
                 for pid in unique_product_ids
             }
             if product_options:
-                selected_prod_label = st.selectbox("Välj produkt", options=list(product_options.keys()))
+                selected_prod_label = st.selectbox("Välj produkt", options=list(product_options.keys()), help=HELP_TEXTS["prod_item"])
                 selected_prod_id = product_options[selected_prod_label]
             else:
                 st.warning("Inga produkter hittades i BOM.")
                 selected_prod_id = None
 
         with col3:
-            prod_qty = st.number_input("Antal producerade", min_value=1.0, step=1.0)
+            prod_qty = st.number_input("Antal producerade", min_value=1.0, step=1.0, help=HELP_TEXTS["prod_qty"])
         
         if st.form_submit_button("➕ Lägg till i listan", use_container_width=True, type="primary"):
             if selected_prod_id is not None:
@@ -292,7 +327,7 @@ elif selected_page == "🏭 Registrera Daglig Produktion":
         st.markdown("---")
         
         # Security Key Verification
-        secret_key_prod = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_prod")
+        secret_key_prod = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_prod", help=HELP_TEXTS["prod_secret"])
         
         action_cols = st.columns(2)
         if action_cols[0].button("💾 Spara all produktion till Google Sheets", type="primary", use_container_width=True):
@@ -336,27 +371,27 @@ elif selected_page == "➕ Lägg till ny artikel":
             cols = st.columns(2)
             
             # --- Input fields with dynamic options ---
-            insats_name = cols[0].text_input("Artikelnamn (Insatsvara)")
+            insats_name = cols[0].text_input("Artikelnamn (Insatsvara)", help=HELP_TEXTS["new_insats_name"])
 
             # Dynamic options for 'Typ'
             unique_types = sorted(data['df_insats']['Typ'].dropna().unique()) if not data['df_insats'].empty else []
             type_options = unique_types + ["--- Ange ny ---"]
-            selected_type = cols[1].selectbox("Typ", options=type_options)
+            selected_type = cols[1].selectbox("Typ", options=type_options, help=HELP_TEXTS["new_insats_type"])
             if selected_type == "--- Ange ny ---":
-                insats_type = cols[1].text_input("Ange ny typ:", key="new_type_input")
+                insats_type = cols[1].text_input("Ange ny typ:", key="new_type_input", help=HELP_TEXTS["new_insats_new_type"])
             else:
                 insats_type = selected_type
 
-            vikt_pcs = cols[0].number_input("Vikt/Pcs (om typ är 'g')", min_value=0.0, format="%.2f")
-            initial_stock = cols[1].number_input("Startsaldo (Antal)", min_value=0.0, step=1.0)
-            price = cols[0].number_input("Pris (Kr)", min_value=0.0, format="%.2f")
+            vikt_pcs = cols[0].number_input("Vikt/Pcs (om typ är 'g')", min_value=0.0, format="%.2f", help=HELP_TEXTS["new_insats_vikt_pcs"])
+            initial_stock = cols[1].number_input("Startsaldo (Antal)", min_value=0.0, step=1.0, help=HELP_TEXTS["new_insats_initial_stock"])
+            price = cols[0].number_input("Pris (Kr)", min_value=0.0, format="%.2f", help=HELP_TEXTS["new_insats_price"])
 
             # Dynamic options for 'Leverantör'
             unique_suppliers = sorted(data['df_insats']['Leverantör'].dropna().unique()) if not data['df_insats'].empty else []
             supplier_options = unique_suppliers + ["--- Ange ny ---"]
-            selected_supplier = cols[1].selectbox("Leverantör", options=supplier_options)
+            selected_supplier = cols[1].selectbox("Leverantör", options=supplier_options, help=HELP_TEXTS["new_insats_supplier"])
             if selected_supplier == "--- Ange ny ---":
-                supplier = cols[1].text_input("Ange ny leverantör:", key="new_supplier_input")
+                supplier = cols[1].text_input("Ange ny leverantör:", key="new_supplier_input", help=HELP_TEXTS["new_insats_new_supplier"])
             else:
                 supplier = selected_supplier
             # --- End of input fields ---
@@ -376,7 +411,7 @@ elif selected_page == "➕ Lägg till ny artikel":
             df_basket = pd.DataFrame(st.session_state.insats_basket, columns=INSATS_COLUMNS)
             st.dataframe(df_basket, hide_index=True, use_container_width=True)
 
-            secret_key_insats = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_insats")
+            secret_key_insats = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_insats", help=HELP_TEXTS["new_insats_secret"])
             
             action_cols = st.columns(2)
             if action_cols[0].button("💾 Spara alla till Google Sheets", type="primary", use_container_width=True):
@@ -403,8 +438,8 @@ elif selected_page == "➕ Lägg till ny artikel":
             # --- Product Details ---
             st.markdown("##### Steg 1: Ange produktinformation")
             prod_cols = st.columns(2)
-            product_id_input = prod_cols[0].text_input("Produkt-ID (unikt)")
-            product_name = prod_cols[1].text_input("Produktnamn")
+            product_id_input = prod_cols[0].text_input("Produkt-ID (unikt)", help=HELP_TEXTS["new_prod_id"])
+            product_name = prod_cols[1].text_input("Produktnamn", help=HELP_TEXTS["new_prod_name"])
 
             # --- BOM Details ---
             st.markdown("##### Steg 2: Bygg materialförteckningen (BOM)")
@@ -415,9 +450,9 @@ elif selected_page == "➕ Lägg till ny artikel":
             item_options = {f"{row['Sl']} - {row['Insatsvara']}": row['Sl'] for _, row in data['df_insats'].iterrows()}
             
             bom_cols = st.columns([3, 1, 1, 1])
-            selected_item_str = bom_cols[0].selectbox("Välj insatsvara", options=list(item_options.keys()), key="bom_item")
-            enhet_input = bom_cols[1].text_input("Enhet", value="g")
-            forbrukning = bom_cols[2].number_input("Förbrukning", min_value=0.01, step=0.01, key="bom_qty")
+            selected_item_str = bom_cols[0].selectbox("Välj insatsvara", options=list(item_options.keys()), key="bom_item", help=HELP_TEXTS["new_prod_bom_item"])
+            enhet_input = bom_cols[1].text_input("Enhet", value="g", help=HELP_TEXTS["new_prod_bom_unit"])
+            forbrukning = bom_cols[2].number_input("Förbrukning", min_value=0.01, step=0.01, key="bom_qty", help=HELP_TEXTS["new_prod_bom_consumption"])
             
             if bom_cols[3].form_submit_button("Lägg till komponent"):
                 sl_code = item_options[selected_item_str]
@@ -433,7 +468,7 @@ elif selected_page == "➕ Lägg till ny artikel":
             # --- Form Submission ---
             st.markdown("---")
             st.markdown("##### Steg 3: Spara produkt och BOM")
-            secret_key_product = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_new_product")
+            secret_key_product = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_new_product", help=HELP_TEXTS["new_prod_secret"])
             
             if st.form_submit_button("💾 Spara produkt och BOM", type="primary", use_container_width=True):
                 existing_ids = set(data['df_products']['Produkt_id'].astype(str))
@@ -480,7 +515,7 @@ elif selected_page == "📊 Aktuellt Lagersaldo":
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
     
-    search_term = st.text_input("🔍 Sök efter artikelnamn eller SI-kod:")
+    search_term = st.text_input("🔍 Sök efter artikelnamn eller SI-kod:", help=HELP_TEXTS["search_stock"])
     
     filtered_df = stock_df
     if search_term and not stock_df.empty:
