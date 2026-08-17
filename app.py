@@ -704,8 +704,15 @@ elif selected_page == "💰 Marginaler":
             else:
                 return 'background-color: #D4EDDA' # Green
 
+        # Prepare the dataframe for styling
+        styled_df = display_df.style
+        
+        # Safely apply styling only if the column exists
+        if 'Vinstmarginal (%)' in display_df.columns:
+            styled_df = styled_df.applymap(style_margin, subset=['Vinstmarginal (%)'])
+
         st.dataframe(
-            display_df.style.applymap(style_margin, subset=['Vinstmarginal (%)']),
+            styled_df,
             column_config={
                 "Utpris": st.column_config.NumberColumn(format="%.2f kr"),
                 "Kostpris": st.column_config.NumberColumn(format="%.2f kr"),
