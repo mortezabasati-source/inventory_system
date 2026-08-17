@@ -10,6 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
 from modules.inventory_engine import calculate_current_stock
 from modules.gsheet_connector import load_sheet_data, append_rows_to_sheet
 
+
 SPREADSHEET_NAME = "Inventory_System_DB"
 
 # Safe retrieval of APP_SECRET_KEY from secrets
@@ -101,6 +102,7 @@ HELP_TEXTS = {
     # Add New Product Page
     "new_prod_id": "Ange ett unikt ID för den nya produkten (t.ex. 'PROD-105'). Detta kan inte ändras senare.",
     "new_prod_name": "Ange det fullständiga namnet på den nya färdiga produkten (t.ex. 'Kanelbulle Stor').",
+    "new_prod_utpris": "Ange försäljningspriset för produkten (priset till kund). Använd punkt som decimalavskiljare.",
     "new_prod_bom_item": "Välj en råvara som ingår i produkten.",
     "new_prod_bom_unit": "Ange enheten för förbrukningen (standard är 'g' för gram).",
     "new_prod_bom_consumption": "Ange hur mycket av råvaran (i vald enhet) som går åt för att tillverka EN enhet av produkten.",
@@ -154,10 +156,101 @@ if 'production_basket' not in st.session_state:
 if 'insats_basket' not in st.session_state:
     st.session_state['insats_basket'] = []
 
+def calculate_product_cost_and_margin(df_products: pd.DataFrame, df_bom: pd.DataFrame, df_insats: pd.DataFrame) -> pd.DataFrame:
+    """Calculates cost price and profit margin for each product."""
+    if df_products.empty or 'Produkt_id' not in df_products.columns:
+        return pd.DataFrame()
+
+    # Ensure 'Utpris' column exists and is numeric, fill missing with 0
+    if 'Utpris' not in df_products.columns:
+        df_products['Utpris'] = 0.0
+
+    utpris_values = pd.to_numeric(df_products['Utpris'], errors='coerce')
+    df_products['Utpris'] = pd.Series(utpris_values, index=df_products.index).fillna(0.0)
+
+    # --- Data Type Standardization ---
+    # Ensure all ID columns used for matching are strings to prevent type mismatches.
+    df_bom['Produkt_id'] = df_bom['Produkt_id'].astype(str)
+    df_bom['SI'] = df_bom['SI'].astype(str)
+
+    # --- Multi-Level BOM Cost Calculation Logic ---
+    df_insats_copy = df_insats.copy()
+    vikt_per_pcs = pd.to_numeric(df_insats_copy['Vikt/Pcs'], errors='coerce')
+    df_insats_copy['Vikt/Pcs'] = pd.Series(vikt_per_pcs, index=df_insats_copy.index).fillna(1.0)
+    pris_kr = pd.to_numeric(df_insats_copy['Pris (Kr)'], errors='coerce')
+    df_insats_copy['Pris (Kr)'] = pd.Series(pris_kr, index=df_insats_copy.index).fillna(0.0)
+
+    # 1. Create a price map for raw materials (Insatsvara)
+    raw_material_price_map = {}
+    for _, row in df_insats_copy.iterrows():
+        si_code = str(row['Sl']) # Convert key to string to match item_id type
+        consumption_type = str(row.get('Typ', '')).strip().lower()
+        price = row['Pris (Kr)']
+        price_unit = str(row.get('Pris_Enhet', 'pkg')).strip().lower()
+        weight_per_pkg = row['Vikt/Pcs']
+        
+        if consumption_type == 'g':
+            if price_unit == 'pkg':
+                raw_material_price_map[si_code] = price / weight_per_pkg if weight_per_pkg > 0 else 0
+            elif price_unit == 'kg':
+                raw_material_price_map[si_code] = price / 1000.0
+            elif price_unit == 'g':
+                raw_material_price_map[si_code] = price
+            else:
+                raw_material_price_map[si_code] = price / weight_per_pkg if weight_per_pkg > 0 else 0
+        else:
+            # For 'st' (piece) type items, the price is per package.
+            # 'Vikt/Pcs' for 'st' items should represent the number of pieces in the package.
+            # The unit cost is Price / Pieces per package.
+            pieces_per_pkg = weight_per_pkg
+            raw_material_price_map[si_code] = price / pieces_per_pkg if pieces_per_pkg > 0 else price
+
+    # 2. Recursive function to calculate cost for any product/sub-product
+    memo = {} # Memoization to avoid re-calculating costs
+    # A product is anything that has a BOM. This includes final products and sub-assemblies.
+    # This is the key change to fix the "zero cost" issue.
+    all_product_ids_in_bom = set(df_bom['Produkt_id'].unique())
+
+
+    def get_cost(item_id):
+        item_id = str(item_id)
+        if item_id in memo:
+            return memo[item_id]
+        
+        # Priority 1: Check if the item is a product/sub-product and calculate its cost recursively.
+        if item_id in all_product_ids_in_bom:
+            bom_for_item = df_bom[df_bom['Produkt_id'] == item_id] # Find the recipe for this item
+            total_cost = 0
+            for _, row in bom_for_item.iterrows():
+                consumption = pd.to_numeric(row.get('Förbrukning'), errors='coerce')
+                consumption_value = consumption if pd.notna(consumption) else 0
+                total_cost += get_cost(row['SI']) * consumption_value
+            memo[item_id] = total_cost
+            return total_cost
+        
+        # Priority 2: If not a product, check if it's a raw material and return its price.
+        if item_id in raw_material_price_map:
+            return raw_material_price_map[item_id]
+        
+        return 0 # Item not found
+
+    # 3. Calculate cost for all final products
+    product_costs = {}
+    for product_id in df_products['Produkt_id']:
+        product_costs[product_id] = get_cost(product_id)
+
+    df_products['Kostpris'] = df_products['Produkt_id'].map(product_costs)
+    df_products['Vinstmarginal (%)'] = df_products.apply(
+        lambda row: ((row['Utpris'] - row['Kostpris']) / row['Utpris']) * 100 if row['Utpris'] > 0 else 0,
+        axis=1
+    )
+    return df_products
+
 # --- Sidebar Navigation ---
 st.sidebar.title("Navigering")
 nav_options = [
     "📊 Aktuellt Lagersaldo",
+    "💰 Marginaler",
     "📥 Registrera Inleverans", 
     "🏭 Registrera Daglig Produktion",
     "➕ Lägg till ny artikel"
@@ -437,9 +530,10 @@ elif selected_page == "➕ Lägg till ny artikel":
         with st.form("new_product_form"):
             # --- Product Details ---
             st.markdown("##### Steg 1: Ange produktinformation")
-            prod_cols = st.columns(2)
+            prod_cols = st.columns(3)
             product_id_input = prod_cols[0].text_input("Produkt-ID (unikt)", help=HELP_TEXTS["new_prod_id"])
             product_name = prod_cols[1].text_input("Produktnamn", help=HELP_TEXTS["new_prod_name"])
+            utpris_input = prod_cols[2].number_input("Utpris (kr)", min_value=0.0, format="%.2f", help=HELP_TEXTS["new_prod_utpris"])
 
             # --- BOM Details ---
             st.markdown("##### Steg 2: Bygg materialförteckningen (BOM)")
@@ -454,33 +548,52 @@ elif selected_page == "➕ Lägg till ny artikel":
             enhet_input = bom_cols[1].text_input("Enhet", value="g", help=HELP_TEXTS["new_prod_bom_unit"])
             forbrukning = bom_cols[2].number_input("Förbrukning", min_value=0.01, step=0.01, key="bom_qty", help=HELP_TEXTS["new_prod_bom_consumption"])
             
-            if bom_cols[3].form_submit_button("Lägg till komponent"):
-                sl_code = item_options[selected_item_str]
-                insatsvara_name = selected_item_str.split(' - ', 1)[1]
-                st.session_state.bom_components.append({'Produkt_id': product_id_input or 'Ny', 'SI': sl_code, 'Insatsvara': insatsvara_name, 'Enhet': enhet_input, 'Förbrukning': forbrukning})
-                st.rerun()
+            add_component_button = bom_cols[3].form_submit_button("Lägg till komponent")
 
             if st.session_state.bom_components:
-                st.write("Valda komponenter:")
+                st.markdown("---")
+                st.write("**Valda komponenter:**")
                 df_bom_preview = pd.DataFrame(st.session_state.bom_components)
-                st.dataframe(df_bom_preview, hide_index=True, use_container_width=True)
+                
+                # Display with delete buttons
+                for i, component in enumerate(st.session_state.bom_components):
+                    cols = st.columns([4, 1])
+                    cols[0].text(f"  - {component['Insatsvara']} ({component['Förbrukning']} {component['Enhet']})")
+                    if cols[1].form_submit_button("🗑️", key=f"del_comp_{i}", help="Ta bort denna komponent"):
+                        st.session_state.bom_components.pop(i)
+                        st.rerun()
+                
+                if st.form_submit_button("🗑️ Rensa hela listan", help="Ta bort alla komponenter från listan"):
+                    st.session_state.bom_components = []
+                    st.rerun()
+
+            if add_component_button:
+                if not product_id_input or not product_name:
+                    st.warning("Vänligen ange Produkt-ID och Produktnamn innan du lägger till komponenter.")
+                else:
+                    sl_code = item_options[selected_item_str]
+                    insatsvara_name = selected_item_str.split(' - ', 1)[1]
+                    st.session_state.bom_components.append({'Produkt_id': product_id_input, 'SI': sl_code, 'Insatsvara': insatsvara_name, 'Enhet': enhet_input, 'Förbrukning': forbrukning})
+                    st.rerun()
 
             # --- Form Submission ---
             st.markdown("---")
             st.markdown("##### Steg 3: Spara produkt och BOM")
             secret_key_product = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_new_product", help=HELP_TEXTS["new_prod_secret"])
             
-            if st.form_submit_button("💾 Spara produkt och BOM", type="primary", use_container_width=True):
+            save_button = st.form_submit_button("💾 Spara produkt och BOM", type="primary", use_container_width=True)
+
+            if save_button:
                 existing_ids = set(data['df_products']['Produkt_id'].astype(str))
-                if not product_id_input or not product_name or not st.session_state.bom_components:
-                    st.warning("Du måste ange Produkt-ID, Produktnamn och minst en BOM-komponent.")
+                if not product_id_input or not product_name or not st.session_state.bom_components or utpris_input <= 0:
+                    st.warning("Du måste ange Produkt-ID, Produktnamn, ett Utpris större än noll och minst en BOM-komponent.")
                 elif product_id_input in existing_ids:
                     st.error(f"⛔ Produkt-ID '{product_id_input}' finns redan. Välj ett unikt ID.")
                 elif not APP_SECRET_KEY:
                     st.error("⚠️ APP_SECRET_KEY är inte definierad i Secrets!")
                 elif secret_key_product.strip() == str(APP_SECRET_KEY).strip():
                     # Logic to save Product and BOM
-                    append_rows_to_sheet(SPREADSHEET_NAME, "Products", [[product_id_input, product_name]])
+                    append_rows_to_sheet(SPREADSHEET_NAME, "Products", [[product_id_input, product_name, utpris_input]])
                     bom_rows = [[product_id_input, comp['SI'], comp['Insatsvara'], comp['Enhet'], comp['Förbrukning']] for comp in st.session_state.bom_components]
                     append_rows_to_sheet(SPREADSHEET_NAME, "BOM", bom_rows)
                     
@@ -567,3 +680,40 @@ elif selected_page == "📊 Aktuellt Lagersaldo":
         hide_index=True
     )
     st.markdown('</div>', unsafe_allow_html=True)
+
+# ------------------- Page 5: Profitability Analysis -------------------
+elif selected_page == "💰 Marginaler":
+    st.header("💰 Marginaler")
+
+    margin_df = calculate_product_cost_and_margin(
+        data['df_products'],
+        data['df_bom'],
+        data['df_insats']
+    )
+
+    if not margin_df.empty:
+        st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
+        
+        display_df = margin_df[['Produkt_id', 'Produkt_namn', 'Utpris', 'Kostpris', 'Vinstmarginal (%)']].copy()
+        
+        def style_margin(val):
+            if val < 10:
+                return 'background-color: #FFD2D2' # Red
+            elif val < 30:
+                return 'background-color: #FFF3CD' # Yellow
+            else:
+                return 'background-color: #D4EDDA' # Green
+
+        st.dataframe(
+            display_df.style.applymap(style_margin, subset=['Vinstmarginal (%)']),
+            column_config={
+                "Utpris": st.column_config.NumberColumn(format="%.2f kr"),
+                "Kostpris": st.column_config.NumberColumn(format="%.2f kr"),
+                "Vinstmarginal (%)": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.warning("Inga produktdata hittades för att analysera lönsamheten.")
