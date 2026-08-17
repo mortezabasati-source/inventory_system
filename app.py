@@ -295,8 +295,8 @@ if selected_page == "📥 Registrera Inleverans":
             total_base = pkg_qty * vikt_pcs
             st.info(f"Total basmängd som läggs till: **{total_base:,.2f}g**")
         
-        with col_submit2:
-            if st.form_submit_button("➕ Lägg till i listan", use_container_width=True, type="primary"):
+        with col_submit2: # `width` replaces `use_container_width`
+            if st.form_submit_button("➕ Lägg till i listan", type="primary"):
                 new_row = [str(entry_date), str(selected_item['Sl']), selected_item['Insatsvara'], pkg_qty, total_base]
                 st.session_state.inbound_basket.append(new_row)
                 st.success(f"✔️ Lade till '{selected_item['Insatsvara']}' i listan.")
@@ -334,7 +334,7 @@ if selected_page == "📥 Registrera Inleverans":
         secret_key_inbound = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_inbound", help=HELP_TEXTS["inbound_secret"])
         
         action_cols = st.columns(2)
-        if action_cols[0].button("💾 Spara alla poster till Google Sheets", type="primary", use_container_width=True):
+        if action_cols[0].button("💾 Spara alla poster till Google Sheets", type="primary"):
             if not APP_SECRET_KEY:
                 st.error("⚠️ APP_SECRET_KEY در Secrets تعریف نشده است!")
             elif secret_key_inbound.strip() == str(APP_SECRET_KEY).strip():
@@ -346,7 +346,7 @@ if selected_page == "📥 Registrera Inleverans":
             else:
                 st.error("⛔ Felaktig säkerhetsnyckel. Posterna sparades inte.")
             
-        if action_cols[1].button("🗑️ Töm hela listan", use_container_width=True):
+        if action_cols[1].button("🗑️ Töm hela listan"):
             st.session_state.inbound_basket = []
             st.rerun()
             
@@ -386,7 +386,7 @@ elif selected_page == "🏭 Registrera Daglig Produktion":
         with col3:
             prod_qty = st.number_input("Antal producerade", min_value=1.0, step=1.0, help=HELP_TEXTS["prod_qty"])
         
-        if st.form_submit_button("➕ Lägg till i listan", use_container_width=True, type="primary"):
+        if st.form_submit_button("➕ Lägg till i listan", type="primary"):
             if selected_prod_id is not None:
                 product_name = product_name_map.get(str(selected_prod_id), 'Okänt Produktnamn')
                 new_prod_row = [str(prod_date), str(selected_prod_id), product_name, prod_qty]
@@ -423,7 +423,7 @@ elif selected_page == "🏭 Registrera Daglig Produktion":
         secret_key_prod = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_prod", help=HELP_TEXTS["prod_secret"])
         
         action_cols = st.columns(2)
-        if action_cols[0].button("💾 Spara all produktion till Google Sheets", type="primary", use_container_width=True):
+        if action_cols[0].button("💾 Spara all produktion till Google Sheets", type="primary"):
             if not APP_SECRET_KEY:
                 st.error("⚠️ APP_SECRET_KEY در Secrets تعریف نشده است!")
             elif secret_key_prod.strip() == str(APP_SECRET_KEY).strip():
@@ -435,7 +435,7 @@ elif selected_page == "🏭 Registrera Daglig Produktion":
             else:
                 st.error("⛔ Felaktig säkerhetsnyckel. Posterna sparades inte.")
             
-        if action_cols[1].button("🗑️ Töm hela listan", use_container_width=True):
+        if action_cols[1].button("🗑️ Töm hela listan"):
             st.session_state.production_basket = []
             st.rerun()
             
@@ -489,7 +489,7 @@ elif selected_page == "➕ Lägg till ny artikel":
                 supplier = selected_supplier
             # --- End of input fields ---
 
-            if st.form_submit_button("➕ Lägg till i listan", use_container_width=True, type="primary"):
+            if st.form_submit_button("➕ Lägg till i listan", type="primary"):
                 if not insats_name:
                     st.warning("Artikelnamn får inte vara tomt.")
                 else:
@@ -502,12 +502,12 @@ elif selected_page == "➕ Lägg till ny artikel":
             st.markdown("---")
             st.subheader("Nya insatsvaror att spara")
             df_basket = pd.DataFrame(st.session_state.insats_basket, columns=INSATS_COLUMNS)
-            st.dataframe(df_basket, hide_index=True, use_container_width=True)
+            st.dataframe(df_basket, hide_index=True)
 
             secret_key_insats = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_insats", help=HELP_TEXTS["new_insats_secret"])
             
             action_cols = st.columns(2)
-            if action_cols[0].button("💾 Spara alla till Google Sheets", type="primary", use_container_width=True):
+            if action_cols[0].button("💾 Spara alla till Google Sheets", type="primary"):
                 if not APP_SECRET_KEY:
                     st.error("⚠️ APP_SECRET_KEY är inte definierad i Secrets!")
                 elif secret_key_insats.strip() == str(APP_SECRET_KEY).strip():
@@ -519,7 +519,7 @@ elif selected_page == "➕ Lägg till ny artikel":
                 else:
                     st.error("⛔ Felaktig säkerhetsnyckel.")
             
-            if action_cols[1].button("🗑️ Töm listan", use_container_width=True):
+            if action_cols[1].button("🗑️ Töm listan"):
                 st.session_state.insats_basket = []
                 st.rerun()
 
@@ -581,7 +581,7 @@ elif selected_page == "➕ Lägg till ny artikel":
             st.markdown("##### Steg 3: Spara produkt och BOM")
             secret_key_product = st.text_input("🔑 Ange säkerhetsnyckel för att spara", type="password", key="secret_new_product", help=HELP_TEXTS["new_prod_secret"])
             
-            save_button = st.form_submit_button("💾 Spara produkt och BOM", type="primary", use_container_width=True)
+            save_button = st.form_submit_button("💾 Spara produkt och BOM", type="primary")
 
             if save_button:
                 existing_ids = set(data['df_products']['Produkt_id'].astype(str))
@@ -669,6 +669,7 @@ elif selected_page == "📊 Aktuellt Lagersaldo":
 
     st.dataframe(
         styled_df,
+        use_container_width=True,
         column_config={
             "Startsaldo": st.column_config.NumberColumn(format="%,.2f g"),
             "Inlevererat": st.column_config.NumberColumn(format="%,.2f g"),
@@ -676,7 +677,6 @@ elif selected_page == "📊 Aktuellt Lagersaldo":
             "Aktuellt Saldo": st.column_config.NumberColumn(format="%,.2f g"),
             "Enhet": st.column_config.SelectboxColumn(options=enhet_options)
         },
-        use_container_width=True,
         hide_index=True
     )
     st.markdown('</div>', unsafe_allow_html=True)
@@ -709,16 +709,16 @@ elif selected_page == "💰 Marginaler":
         
         # Safely apply styling only if the column exists
         if 'Vinstmarginal (%)' in display_df.columns:
-            styled_df = styled_df.applymap(style_margin, subset=['Vinstmarginal (%)'])
+            styled_df = styled_df.map(style_margin, subset=['Vinstmarginal (%)'])
 
         st.dataframe(
             styled_df,
+            use_container_width=True,
             column_config={
                 "Utpris": st.column_config.NumberColumn(format="%.2f kr"),
                 "Kostpris": st.column_config.NumberColumn(format="%.2f kr"),
                 "Vinstmarginal (%)": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
             },
-            use_container_width=True,
             hide_index=True
         )
         st.markdown('</div>', unsafe_allow_html=True)
