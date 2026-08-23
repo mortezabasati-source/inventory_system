@@ -498,10 +498,20 @@ elif selected_page == "🏭 Registrera Daglig Produktion":
         
         unique_product_ids = data['df_bom']['Produkt_id'].unique() if not data['df_bom'].empty else []
         df_products_copy = data['df_products'].copy() if not data['df_products'].empty else pd.DataFrame()
-        product_name_map = df_products_copy.set_index('Produkt_id')['Produkt_namn'].to_dict() if 'Produkt_id' in df_products_copy.columns else {}
+        
+        # اطمینان از اینکه شناسه‌ها در نقشه نام‌ها حتماً رشته هستند
+        if not df_products_copy.empty and 'Produkt_id' in df_products_copy.columns:
+            df_products_copy['Produkt_id'] = df_products_copy['Produkt_id'].astype(str).str.strip()
+            product_name_map = df_products_copy.set_index('Produkt_id')['Produkt_namn'].to_dict()
+        else:
+            product_name_map = {}
 
         with col2:
-            product_options = {f"{pid} - {product_name_map.get(str(pid), 'Okänd')}": pid for pid in unique_product_ids}
+            # تبدیل pid به رشته و حذف فاصله‌ها برای جستجوی دقیق
+            product_options = {
+                f"{str(pid).strip()} - {product_name_map.get(str(pid).strip(), 'Okänd')}": pid 
+                for pid in unique_product_ids
+            }
             selected_prod_label = st.selectbox("Välj produkt", options=list(product_options.keys()), help=HELP_TEXTS["prod_item"]) if product_options else None
             selected_prod_id = product_options[selected_prod_label] if selected_prod_label else None
 
