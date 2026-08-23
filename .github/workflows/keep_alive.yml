@@ -10,4 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send HTTP Request
-        run: curl -I https://inventorysystem-bqvcgwvkigfchoykmmg9rb.streamlit.app/
+        run: |
+          curl -I https://inventorysystem-bqvcgwvkigfchoykmmg9rb.streamlit.app/
+          curl -I https://analytics-dashboard-yg4k2jgginumuyzhy4pznd.streamlit.app/
