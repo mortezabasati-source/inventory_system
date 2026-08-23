@@ -1,0 +1,13 @@
+name: Keep App Alive
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Executes every hour
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  ping_app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send HTTP Request
+        run: curl -I https://inventorysystem-bqvcgwvkigfchoykmmg9rb.streamlit.app/
