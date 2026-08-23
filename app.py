@@ -684,8 +684,7 @@ elif selected_page == "➕ Lägg till ny artikel":
             m1.metric("Kostpris", f"{estimated_total_cost:,.2f} Kr")
             m2.metric("Vinstmarginal", f"{estimated_margin:.1f}%")
             
-            st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
-            st.markdown("###### 📋 Valda Komponenter i Receptet")
+            st.markdown("<h6 style='margin-top: -20px; margin-bottom: 10px;'>📋 Valda Komponenter i Receptet</h6>", unsafe_allow_html=True)
 
             with st.container(height=380):
                 if not st.session_state.bom_components:
