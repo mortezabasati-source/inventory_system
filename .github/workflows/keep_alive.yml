@@ -1,15 +1,25 @@
-name: Keep App Alive
+name: Keep Streamlit Alive via Empty Commit
 
 on:
   schedule:
-    - cron: '0 * * * *' # Executes every hour
-  workflow_dispatch: # Allows manual triggering
+    
+    - cron: '0 */8 * * *'
+  
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  ping_app:
+  keep-alive:
     runs-on: ubuntu-latest
     steps:
-      - name: Send HTTP Request
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Create and Push Empty Commit
         run: |
-          curl -I https://inventorysystem-bqvcgwvkigfchoykmmg9rb.streamlit.app/
-          curl -I https://analytics-dashboard-yg4k2jgginumuyzhy4pznd.streamlit.app/
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore: keepalive ping for Streamlit Cloud [skip ci]"
+          git push
