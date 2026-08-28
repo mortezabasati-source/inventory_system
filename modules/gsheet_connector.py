@@ -1,5 +1,7 @@
 import pandas as pd  # type: ignore[import]
 import gspread  # type: ignore[import]
+import os
+import json
 try:
     from google.oauth2.service_account import Credentials  # type: ignore[import]
 except Exception as e:  # pragma: no cover - provides clearer error when dependency missing
@@ -52,7 +54,20 @@ SCOPES = [
 @st.cache_resource
 def get_gsheet_client():
     """Establishes a cached connection to Google Sheets using Streamlit secrets."""
-    creds_dict = st.secrets["gcp_service_account"]
+    # 1. Check environment variable first (Google Cloud Run)
+    creds_str = os.getenv("gcp_service_account")
+    if creds_str:
+        try:
+            creds_dict = json.loads(creds_str)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Environment variable 'gcp_service_account' is not valid JSON: {e}")
+    else:
+        # 2. Fallback to Streamlit secrets (Local/Streamlit Cloud)
+        try:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+        except Exception as e:
+            raise RuntimeError(f"Could not find 'gcp_service_account' in environment variables or st.secrets: {e}")
+
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     client = gspread.authorize(creds)
     return client
