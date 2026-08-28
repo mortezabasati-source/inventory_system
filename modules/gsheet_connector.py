@@ -51,33 +51,37 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
+def get_gcp_credentials():
+    # ۱. بررسی متغیر محیطی گوگل کلود ران
+    env_creds = os.getenv("gcp_service_account")
+    if env_creds:
+        try:
+            return json.loads(env_creds)
+        except Exception:
+            pass
+
+    # ۲. بررسی st.secrets (در صورت وجود فایل)
+    try:
+        if "gcp_service_account" in st.secrets:
+            return dict(st.secrets["gcp_service_account"])
+    except Exception:
+        pass
+
+    return None
+
 @st.cache_resource
 def get_gsheet_client():
     """Establishes a cached connection to Google Sheets using Cloud Run env vars or Streamlit secrets."""
-    creds_str = os.getenv("gcp_service_account")
+    creds_dict = get_gcp_credentials()
     
-    if creds_str:
-        # If running in Cloud Run where env var is set
-        try:
-            creds_dict = json.loads(creds_str)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Environment variable 'gcp_service_account' is not valid JSON: {e}")
+    if creds_dict:
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        return client
     else:
-        # Fallback for Streamlit Cloud / Local dev
-        try:
-            # We explicitly convert to dict to avoid StreamlitSecretNotFoundError if .toml is missing 
-            # and it's accessed like a dict. But st.secrets itself might throw an error if no toml exists.
-            # To be 100% safe, we only try st.secrets if we didn't find the env var.
-            if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
-                creds_dict = dict(st.secrets["gcp_service_account"])
-            else:
-                raise KeyError("gcp_service_account not found in st.secrets")
-        except Exception as e:
-            raise RuntimeError("Could not find 'gcp_service_account' in environment variables or st.secrets.") from e
-
-    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    client = gspread.authorize(creds)
-    return client
+        if hasattr(st, "error"):
+            st.error("Could not find 'gcp_service_account' in environment variables or st.secrets.")
+        raise RuntimeError("Could not find 'gcp_service_account' in environment variables or st.secrets.")
 
 @st.cache_data(ttl=600) # Cache data for 10 minutes
 def load_sheet_data(spreadsheet_name: str, worksheet_name: str) -> pd.DataFrame:
