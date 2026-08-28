@@ -53,8 +53,28 @@ SCOPES = [
 
 @st.cache_resource
 def get_gsheet_client():
-    """Establishes a cached connection to Google Sheets using Streamlit secrets."""
-    creds_dict = st.secrets["gcp_service_account"]
+    """Establishes a cached connection to Google Sheets using Cloud Run env vars or Streamlit secrets."""
+    creds_str = os.getenv("gcp_service_account")
+    
+    if creds_str:
+        # If running in Cloud Run where env var is set
+        try:
+            creds_dict = json.loads(creds_str)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Environment variable 'gcp_service_account' is not valid JSON: {e}")
+    else:
+        # Fallback for Streamlit Cloud / Local dev
+        try:
+            # We explicitly convert to dict to avoid StreamlitSecretNotFoundError if .toml is missing 
+            # and it's accessed like a dict. But st.secrets itself might throw an error if no toml exists.
+            # To be 100% safe, we only try st.secrets if we didn't find the env var.
+            if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
+                creds_dict = dict(st.secrets["gcp_service_account"])
+            else:
+                raise KeyError("gcp_service_account not found in st.secrets")
+        except Exception as e:
+            raise RuntimeError("Could not find 'gcp_service_account' in environment variables or st.secrets.") from e
+
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     client = gspread.authorize(creds)
     return client

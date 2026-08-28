@@ -13,8 +13,17 @@ from modules.gsheet_connector import load_sheet_data, append_rows_to_sheet
 # --- Database & Config Settings ---
 SPREADSHEET_NAME = "Inventory_System_DB"
 
-# Safe retrieval of APP_SECRET_KEY from Streamlit secrets
-APP_SECRET_KEY = st.secrets.get("APP_SECRET_KEY", None)
+# Safe retrieval of APP_SECRET_KEY from environment variables or Streamlit secrets
+def get_app_secret(key, default=None):
+    val = os.getenv(key)
+    if val:
+        return val
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+APP_SECRET_KEY = get_app_secret("APP_SECRET_KEY", None)
 
 # --- Page Configuration ---
 st.set_page_config(
