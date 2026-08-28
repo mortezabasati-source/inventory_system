@@ -290,17 +290,51 @@ def calculate_product_cost_and_margin(df_products: pd.DataFrame, df_bom: pd.Data
     )
     return df_products
 
-# --- Sidebar Navigation ---
-st.sidebar.title("Navigering")
-nav_options = [
-    "📊 Aktuellt Lagersaldo",
-    "💰 Marginaler",
-    "📥 Registrera Inleverans",
-    "🏭 Registrera Daglig Produktion",    
-    "➕ Lägg till ny artikel"
-]
+# --- Mobile Detection & Layout Adjustments ---
+# Using query parameters as a reliable way to force mobile view during testing (e.g. ?mobile=true)
+query_params = st.query_params
+force_mobile = query_params.get("mobile", "").lower() == "true"
 
-selected_page = st.sidebar.radio("Välj en sida:", nav_options)
+def is_mobile_device():
+    """Detects if the user is accessing from a mobile device using headers or testing parameters."""
+    if force_mobile:
+        return True
+    try:
+        user_agent = st.context.headers.get("User-Agent", "").lower()
+        mobile_keywords = ["android", "webos", "iphone", "ipad", "ipod", "blackberry", "windows phone", "mobile"]
+        return any(keyword in user_agent for keyword in mobile_keywords)
+    except Exception:
+        return False
+
+is_mobile = is_mobile_device()
+
+# --- Sidebar Navigation ---
+if is_mobile:
+    selected_page = "📥 Registrera Inleverans"
+    # Hide sidebar, header (which contains the hamburger menu), and remove top padding
+    st.markdown("""
+        <style>
+            /* Hide the main Streamlit sidebar and its contents */
+            [data-testid="stSidebar"] {display: none !important; visibility: hidden !important;}
+            /* Hide the hamburger menu (sidebar expand/collapse button) */
+            [data-testid="collapsedControl"] {display: none !important;}
+            [data-testid="stSidebarCollapsedControl"] {display: none !important;}
+            /* Hide the header completely */
+            header[data-testid="stHeader"] {display: none !important;}
+            /* Adjust top padding since header is gone */
+            .block-container {padding-top: 1rem !important;}
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    st.sidebar.title("Navigering")
+    nav_options = [
+        "📊 Aktuellt Lagersaldo",
+        "💰 Marginaler",
+        "📥 Registrera Inleverans",
+        "🏭 Registrera Daglig Produktion",    
+        "➕ Lägg till ny artikel"
+    ]
+    selected_page = st.sidebar.radio("Välj en sida:", nav_options, index=0)
 
 # ==============================================================================
 # PAGE 1: CURRENT STOCK (Aktuellt Lagersaldo)
