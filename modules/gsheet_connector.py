@@ -52,15 +52,18 @@ SCOPES = [
 ]
 
 def get_gcp_credentials():
-    # ۱. بررسی متغیر محیطی گوگل کلود ران
-    env_creds = os.getenv("gcp_service_account")
-    if env_creds:
+    # ۱. خواندن از متغیرهای محیطی Cloud Run
+    raw_env = os.getenv("gcp_service_account")
+    if raw_env:
         try:
-            return json.loads(env_creds)
-        except Exception:
-            pass
+            return json.loads(raw_env)
+        except Exception as e:
+            if hasattr(st, "error"):
+                st.error(f"Error parsing gcp_service_account JSON from env: {e}")
+            else:
+                print(f"Error parsing gcp_service_account JSON from env: {e}")
 
-    # ۲. بررسی st.secrets (در صورت وجود فایل)
+    # ۲. خواندن از st.secrets
     try:
         if "gcp_service_account" in st.secrets:
             return dict(st.secrets["gcp_service_account"])
