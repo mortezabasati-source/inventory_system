@@ -2,6 +2,12 @@ import sys
 import os
 from datetime import date
 import pandas as pd  # type: ignore
+from pandas.api.types import (
+    is_categorical_dtype,
+    is_datetime64_any_dtype,
+    is_numeric_dtype,
+    is_object_dtype,
+)
 import streamlit as st  # type: ignore
 from builtins import Exception
 
@@ -341,7 +347,8 @@ else:
         "💰 Marginaler",
         "📥 Registrera Inleverans",
         "🏭 Registrera Daglig Produktion",    
-        "➕ Lägg till ny artikel"
+        "➕ Lägg till ny artikel",
+        "📈 Inleveransrapport"
     ]
     selected_page = st.sidebar.radio("Välj en sida:", nav_options, index=0)
 
@@ -798,3 +805,96 @@ elif selected_page == "➕ Lägg till ny artikel":
             else:
                 st.error("⛔ Felaktig nyckel.")
         st.markdown('</div>', unsafe_allow_html=True)
+
+# ==============================================================================
+# PAGE 6: INBOUND REPORT (Inleveransrapport)
+# ==============================================================================
+elif selected_page == "📈 Inleveransrapport":
+    st.header("📈 Rapport: Inleveransanalys")
+    
+    df_inbound = data['df_inbound'].copy()
+    df_insats = data['df_insats'].copy()
+    
+    if df_inbound.empty or df_insats.empty:
+        st.warning("Ingen inleveransdata tillgänglig för analys.")
+    else:
+        # تغییر نام ستون‌ها با توجه به ایندکس برای اطمینان از یکپارچگی
+        df_inbound.columns = ['Datum', 'SI_Code', 'Artikel', 'Antal_Förpackningar', 'Total_Basmängd']
+        
+        # تبدیل فرمت‌ها و ترکیب (Join) داده‌های ورودی با داده‌های کالاها
+        df_inbound['SI_Code'] = df_inbound['SI_Code'].astype(str)
+        df_insats['Sl'] = df_insats['Sl'].astype(str)
+        
+        merged_df = pd.merge(
+            df_inbound, 
+            df_insats[['Sl', 'Typ', 'Leverantör', 'Pris (Kr)']], 
+            left_on='SI_Code', 
+            right_on='Sl', 
+            how='left'
+        )
+        
+        # محاسبه مبلغ 
+        merged_df['Antal_Förpackningar'] = pd.to_numeric(merged_df['Antal_Förpackningar'], errors='coerce').fillna(0)
+        merged_df['Pris (Kr)'] = pd.to_numeric(merged_df['Pris (Kr)'], errors='coerce').fillna(0)
+        merged_df['Totalt_Belopp'] = merged_df['Antal_Förpackningar'] * merged_df['Pris (Kr)']
+        
+        # مدیریت فرمت تاریخ
+        merged_df['Datum'] = pd.to_datetime(merged_df['Datum'], errors='coerce')
+        
+        st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
+        
+        min_date = merged_df['Datum'].min()
+        max_date = merged_df['Datum'].max()
+        
+        # ردیف اول: فیلتر تاریخ
+        if pd.isna(min_date) or pd.isna(max_date):
+            start_date, end_date = date.today(), date.today()
+        else:
+            c_date, _, _ = st.columns([1, 1, 1])
+            date_range = c_date.date_input("📅 Period", [min_date, max_date], help="Filtrera på datum")
+            if len(date_range) == 2:
+                start_date, end_date = date_range
+            else:
+                start_date, end_date = date_range[0], date_range[0]
+                
+        # اعمال فیلتر تاریخ (برای اینکه گزینه‌های بعدی بصورت آبشاری آپدیت شوند)
+        mask_date = (merged_df['Datum'].dt.date >= start_date) & (merged_df['Datum'].dt.date <= end_date)
+        filtered_df = merged_df[mask_date].copy()
+        
+        st.markdown("<hr style='margin: 0.5em 0; border-color: #DDD7C0;'>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 0.85em; color: #146331; font-weight: bold; margin-bottom: 0.5em;'>🔍 Kolumnfilter (Välj 'Alla' för att visa alla)</div>", unsafe_allow_html=True)
+        
+        # ردیف دوم: فیلترهای کالا و تامین‌کننده چسبیده به جدول (با استفاده از رادیوباتن افقی)
+        
+        artiklar_options = ["Alla"] + filtered_df['Artikel'].dropna().unique().tolist()
+        selected_artikel = st.radio("📦 Artikel", options=artiklar_options, index=0, horizontal=True)
+        if selected_artikel != "Alla":
+            filtered_df = filtered_df[filtered_df['Artikel'] == selected_artikel]
+            
+        suppliers_options = ["Alla"] + filtered_df['Leverantör'].dropna().unique().tolist()
+        selected_supplier = st.radio("🏢 Leverantör", options=suppliers_options, index=0, horizontal=True)
+        if selected_supplier != "Alla":
+            filtered_df = filtered_df[filtered_df['Leverantör'] == selected_supplier]
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # کارت‌های آمار بر اساس فیلترهای نهایی
+        m1, m2 = st.columns(2)
+        m1.metric("Totalt Antal Förpackningar", f"{filtered_df['Antal_Förpackningar'].sum():,.2f}")
+        m2.metric("Totalt Värde / Belopp", f"{filtered_df['Totalt_Belopp'].sum():,.2f} Kr")
+        
+        # مدیریت فرمت تاریخ برای نمایش در جدول
+        filtered_df['Datum'] = filtered_df['Datum'].dt.strftime('%Y-%m-%d')
+        
+        display_columns = ['Datum', 'Artikel', 'Typ', 'Leverantör', 'Antal_Förpackningar', 'Pris (Kr)', 'Totalt_Belopp']
+        
+        st.dataframe(
+            filtered_df[display_columns], 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Antal_Förpackningar": st.column_config.NumberColumn(format="%,.2f"),
+                "Pris (Kr)": st.column_config.NumberColumn(format="%,.2f"),
+                "Totalt_Belopp": st.column_config.NumberColumn(format="%,.2f"),
+            }
+        )
