@@ -381,6 +381,7 @@ if selected_page == "📊 Aktuellt Lagersaldo":
         'Sl': 'SI-kod',
         'Insatsvara': 'Artikel',
         'Typ': 'Enhet',
+        'Vikt/Pcs': 'Mängd/Enhet',
         'Initial_Base_Stock': 'Startsaldo',
         'Total_Inbound': 'Inlevererat',
         'Total_Consumed': 'Förbrukat',
@@ -388,7 +389,16 @@ if selected_page == "📊 Aktuellt Lagersaldo":
     }
     
     columns_to_show = [col for col in COLUMN_MAPPING.keys() if col in filtered_df.columns]
+    
+    # Create display dataframe
     display_df = filtered_df[columns_to_show].copy() if isinstance(filtered_df, pd.DataFrame) else pd.DataFrame(columns=columns_to_show)
+    
+    # Convert base unit to item units based on Vikt/Pcs for display
+    vikt_per_pcs = pd.to_numeric(filtered_df['Vikt/Pcs'], errors='coerce').fillna(1.0)
+    for col in ['Initial_Base_Stock', 'Total_Inbound', 'Total_Consumed', 'Current_Stock']:
+        if col in display_df.columns:
+            display_df[col] = display_df[col] / vikt_per_pcs
+
     display_df.columns = [COLUMN_MAPPING.get(col, col) for col in display_df.columns]
 
     def style_low_stock(row):
@@ -398,14 +408,16 @@ if selected_page == "📊 Aktuellt Lagersaldo":
 
     styled_df = display_df.style.apply(style_low_stock, axis=1)
 
+    # dynamically format the columns to show the "Typ/Enhet" from the row
     st.dataframe(
         styled_df,
         use_container_width=True,
         column_config={
-            "Startsaldo": st.column_config.NumberColumn(format="%,.2f g"),
-            "Inlevererat": st.column_config.NumberColumn(format="%,.2f g"),
-            "Förbrukat": st.column_config.NumberColumn(format="%,.2f g"),
-            "Aktuellt Saldo": st.column_config.NumberColumn(format="%,.2f g"),
+            "Mängd/Enhet": st.column_config.NumberColumn(format="%,.2f"),
+            "Startsaldo": st.column_config.NumberColumn(format="%,.2f"),
+            "Inlevererat": st.column_config.NumberColumn(format="%,.2f"),
+            "Förbrukat": st.column_config.NumberColumn(format="%,.2f"),
+            "Aktuellt Saldo": st.column_config.NumberColumn(format="%,.2f"),
         },
         hide_index=True
     )
