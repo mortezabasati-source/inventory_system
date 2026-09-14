@@ -864,12 +864,12 @@ elif selected_page == "📈 Inleveransrapport":
         st.markdown("<hr style='margin: 0.5em 0; border-color: #DDD7C0;'>", unsafe_allow_html=True)
         st.markdown("<div style='font-size: 0.85em; color: #146331; font-weight: bold; margin-bottom: 0.5em;'>🔍 Kolumnfilter (Välj 'Alla' för att visa alla)</div>", unsafe_allow_html=True)
         
-        # ردیف دوم: فیلترهای کالا و تامین‌کننده چسبیده به جدول (با استفاده از رادیوباتن افقی)
+        # ردیف دوم: فیلترهای کالا و تامین‌کننده چسبیده به جدول (با استفاده از دراپ‌دان چندگانه و رادیوباتن افقی)
         
-        artiklar_options = ["Alla"] + filtered_df['Artikel'].dropna().unique().tolist()
-        selected_artikel = st.radio("📦 Artikel", options=artiklar_options, index=0, horizontal=True)
-        if selected_artikel != "Alla":
-            filtered_df = filtered_df[filtered_df['Artikel'] == selected_artikel]
+        artiklar_options = filtered_df['Artikel'].dropna().unique().tolist()
+        selected_artiklar = st.multiselect("📦 Artikel", options=artiklar_options, default=[], help="Lämna tomt för att visa alla")
+        if selected_artiklar:
+            filtered_df = filtered_df[filtered_df['Artikel'].isin(selected_artiklar)]
             
         suppliers_options = ["Alla"] + filtered_df['Leverantör'].dropna().unique().tolist()
         selected_supplier = st.radio("🏢 Leverantör", options=suppliers_options, index=0, horizontal=True)
