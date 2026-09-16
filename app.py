@@ -348,7 +348,8 @@ else:
         "📥 Registrera Inleverans",
         "🏭 Registrera Daglig Produktion",    
         "➕ Lägg till ny artikel",
-        "📈 Inleveransrapport"
+        "📈 Inleveransrapport",
+        "⚙️ Inställningar"
     ]
     selected_page = st.sidebar.radio("Välj en sida:", nav_options, index=0)
 
@@ -637,7 +638,9 @@ elif selected_page == "➕ Lägg till ny artikel":
         st.subheader("Lägg till ny insatsvara")
         
         with st.form("new_insats_form", clear_on_submit=True):
-            next_sl = get_next_sl(data['df_insats'])
+            base_next_sl = get_next_sl(data['df_insats'])
+            # افزودن تعداد آیتم‌های موجود در سبد برای تولید شناسه جدید و جلوگیری از تکرار
+            next_sl = base_next_sl + len(st.session_state.insats_basket)
             st.info(f"Nästa tillgängliga SI-kod (Sl): **{next_sl}**")
 
             cols = st.columns(2)
@@ -898,3 +901,29 @@ elif selected_page == "📈 Inleveransrapport":
                 "Totalt_Belopp": st.column_config.NumberColumn(format="%,.2f"),
             }
         )
+
+# ==============================================================================
+# PAGE 7: SETTINGS (Inställningar) - Cache Management
+# ==============================================================================
+elif selected_page == "⚙️ Inställningar":
+    st.header("⚙️ Inställningar & Underhåll")
+    st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
+    
+    st.subheader("Rensa Appens Cache")
+    st.write("Om du upplever att appen inte visar den senaste datan från Google Sheets (t.ex. efter att du har ändrat något direkt i arket), kan du tvinga appen att hämta ny data genom att rensa cachen.")
+    
+    if st.button("🔄 Rensa Cache & Uppdatera Data", type="primary"):
+        # Clear Streamlit's data cache
+        st.cache_data.clear()
+        
+        # Clear session state variables that might hold old data/baskets
+        keys_to_clear = ['inbound_basket', 'production_basket', 'insats_basket', 'bom_components']
+        for key in keys_to_clear:
+            if key in st.session_state:
+                st.session_state[key] = []
+                
+        st.success("✅ Cachen har rensats! Appen hämtar nu den senaste datan.")
+        # Rerun to immediately fetch fresh data
+        st.rerun()
+        
+    st.markdown('</div>', unsafe_allow_html=True)
