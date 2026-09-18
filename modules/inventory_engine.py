@@ -1,7 +1,8 @@
 import pandas as pd  # type: ignore[import]
 
 def calculate_current_stock(df_insats: pd.DataFrame, df_bom: pd.DataFrame, 
-                            df_inbound: pd.DataFrame, df_production: pd.DataFrame) -> pd.DataFrame:
+                            df_inbound: pd.DataFrame, df_production: pd.DataFrame,
+                            df_stickprov: pd.DataFrame = None) -> pd.DataFrame:
     """
     Calculates the current stock level for each item.
 
@@ -65,5 +66,18 @@ def calculate_current_stock(df_insats: pd.DataFrame, df_bom: pd.DataFrame,
     
     # 4. Compute Net Stock Level
     stock_df['Current_Stock'] = stock_df['Initial_Base_Stock'] + stock_df['Total_Inbound'] - stock_df['Total_Consumed']
+    
+    # 5. Apply Deviations from Stickprov
+    if df_stickprov is not None and not df_stickprov.empty and 'SI_Code' in df_stickprov.columns:
+        df_stickprov['SI_Code'] = df_stickprov['SI_Code'].astype(str)
+        df_stickprov['Deviation'] = pd.to_numeric(df_stickprov['Deviation'], errors='coerce').fillna(0)
+        
+        dev_sum = df_stickprov.groupby('SI_Code')['Deviation'].sum().reset_index()
+        dev_sum.columns = ['Sl', 'Total_Deviation']
+        
+        stock_df = pd.merge(stock_df, dev_sum, on='Sl', how='left')
+        stock_df['Total_Deviation'] = stock_df['Total_Deviation'].fillna(0)
+        
+        stock_df['Current_Stock'] = stock_df['Current_Stock'] + stock_df['Total_Deviation']
     
     return stock_df

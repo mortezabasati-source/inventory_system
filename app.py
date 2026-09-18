@@ -191,7 +191,8 @@ def load_all_data():
         "df_bom": "BOM",
         "df_inbound": "Inbound_Log",
         "df_production": "Production_Log",
-        "df_products": "Products"
+        "df_products": "Products",
+        "df_stickprov": "Stickprov_Log"
     }
     loaded_data = {}
     for df_name, sheet_name in data_sheets.items():
@@ -228,6 +229,8 @@ if 'production_basket' not in st.session_state:
     st.session_state['production_basket'] = []
 if 'insats_basket' not in st.session_state:
     st.session_state['insats_basket'] = []
+if 'stickprov_basket' not in st.session_state:
+    st.session_state['stickprov_basket'] = []
 
 # --- Calculation Functions ---
 def calculate_product_cost_and_margin(df_products: pd.DataFrame, df_bom: pd.DataFrame, df_insats: pd.DataFrame) -> pd.DataFrame:
@@ -347,6 +350,8 @@ else:
         "💰 Marginaler",
         "📥 Registrera Inleverans",
         "🏭 Registrera Daglig Produktion",    
+        "📝 Registrera Stickprov",
+        "📉 Avvikelserapport",
         "➕ Lägg till ny artikel",
         "📈 Inleveransrapport",
         "⚙️ Inställningar"
@@ -363,7 +368,8 @@ if selected_page == "📊 Aktuellt Lagersaldo":
         data['df_insats'], 
         data['df_bom'], 
         data['df_inbound'], 
-        data['df_production']
+        data['df_production'],
+        data.get('df_stickprov')
     )
 
     total_items = len(stock_df)
@@ -618,6 +624,243 @@ elif selected_page == "🏭 Registrera Daglig Produktion":
             st.session_state.production_basket = []
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
+
+# ==============================================================================
+# PAGE: REGISTER STICKPROV (Registrera Stickprov)
+# ==============================================================================
+elif selected_page == "📝 Registrera Stickprov":
+    st.header("📝 Registrera Stickprov (Lagerinventering)")
+    st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
+    
+    # Calculate live stock to show system stock
+    live_stock = calculate_current_stock(
+        data['df_insats'], data['df_bom'], data['df_inbound'], data['df_production'], data.get('df_stickprov')
+    )
+
+    with st.form("stickprov_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            entry_date = st.date_input("Datum", date.today())
+            
+            # Select Item
+            if not live_stock.empty:
+                item_options = {f"{row['Sl']} - {row['Insatsvara']}": str(row['Sl']) for _, row in live_stock.iterrows()}
+                selected_item_label = st.selectbox("Välj artikel / SI-kod", options=list(item_options.keys()))
+                selected_si = item_options[selected_item_label]
+                
+                # Get Current System Stock Base Amount
+                item_data = live_stock[live_stock['Sl'] == selected_si].iloc[0]
+                sys_stock_base = item_data['Current_Stock']
+                vikt_pcs = item_data['Vikt/Pcs'] if pd.notna(item_data['Vikt/Pcs']) and item_data['Vikt/Pcs'] > 0 else 1.0
+                sys_stock_display = sys_stock_base / vikt_pcs
+                typ_enhet = item_data['Typ']
+                
+                st.info(f"Systemsaldo: **{sys_stock_display:,.2f} {typ_enhet}**")
+            else:
+                st.warning("Inga artiklar hittades.")
+                selected_si = None
+            
+        with col2:
+            actual_stock = st.number_input("Faktiskt saldo (fysiskt)", min_value=0.0, step=1.0)
+            note = st.text_input("Anmärkning / Orsak (frivilligt)")
+            
+        if st.form_submit_button("➕ Lägg till", type="primary"):
+            if selected_si is not None:
+                actual_stock_base = actual_stock * vikt_pcs
+                deviation_base = actual_stock_base - sys_stock_base
+                
+                artikel_namn = selected_item_label.split(" - ")[1]
+                st.session_state.stickprov_basket.append([
+                    str(entry_date), selected_si, artikel_namn, sys_stock_base, actual_stock_base, deviation_base, note
+                ])
+                st.rerun()
+                
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if st.session_state.stickprov_basket:
+        st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
+        st.subheader("Stickprov att spara")
+        for i, row in enumerate(st.session_state.stickprov_basket):
+            row_cols = st.columns([2, 1, 3, 2, 2, 2, 2, 1])
+            row_cols[0].write(row[0]) # Date
+            row_cols[1].write(row[1]) # SI
+            row_cols[2].write(row[2]) # Artikel
+            # Display deviations in base unit for accuracy, could be divided by vikt_pcs for display if preferred
+            row_cols[3].write(f"Sys: {row[3]:,.1f}") 
+            row_cols[4].write(f"Fys: {row[4]:,.1f}")
+            
+            dev = row[5]
+            dev_color = "red" if dev < 0 else "green" if dev > 0 else "black"
+            row_cols[5].markdown(f"<span style='color:{dev_color}; font-weight:bold;'>Avv: {dev:,.1f}</span>", unsafe_allow_html=True)
+            
+            row_cols[6].write(row[6]) # Note
+            if row_cols[7].button("🗑️", key=f"del_stickprov_{i}"):
+                st.session_state.stickprov_basket.pop(i)
+                st.rerun()
+
+        secret_key_stickprov = st.text_input("🔑 Säkerhetsnyckel", type="password", key="secret_stickprov")
+        action_cols = st.columns(2)
+        if action_cols[0].button("💾 Spara alla", type="primary"):
+            if secret_key_stickprov.strip() == str(APP_SECRET_KEY).strip():
+                append_rows_to_sheet(SPREADSHEET_NAME, "Stickprov_Log", st.session_state.stickprov_basket)
+                st.session_state.stickprov_basket = []
+                st.cache_data.clear()
+                st.success("✅ Stickprov registrerades och lagersaldot har uppdaterats!")
+                st.rerun()
+            else:
+                st.error("⛔ Felaktig nyckel.")
+            
+        if action_cols[1].button("🗑️ Töm listan"):
+            st.session_state.stickprov_basket = []
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# ==============================================================================
+# PAGE: DEVIATION REPORT (Avvikelserapport)
+# ==============================================================================
+elif selected_page == "📉 Avvikelserapport":
+    st.header("📉 Avvikelserapport (Stickprov Analys)")
+    
+    df_stickprov = data.get('df_stickprov')
+    
+    if df_stickprov is None or df_stickprov.empty:
+        st.warning("Det finns ingen data om stickprov ännu. Registrera ett stickprov först.")
+    else:
+        # کپی گرفتن و تمیز کردن داده‌ها
+        df_dev = df_stickprov.copy()
+        
+        # اطمینان از اینکه تاریخ‌ها در فرمت مناسب هستند
+        df_dev['Datum'] = pd.to_datetime(df_dev['Datum'], errors='coerce')
+        df_dev = df_dev.dropna(subset=['Datum'])
+        
+        # تبدیل مقادیر عددی
+        for col in ['System_Stock', 'Actual_Stock', 'Deviation']:
+            if col in df_dev.columns:
+                df_dev[col] = pd.to_numeric(df_dev[col], errors='coerce').fillna(0.0)
+                
+        st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
+        
+        # فیلتر تاریخ
+        min_date = df_dev['Datum'].min().date() if not df_dev.empty else date.today()
+        max_date = df_dev['Datum'].max().date() if not df_dev.empty else date.today()
+        
+        filter_col, _, _ = st.columns([1, 1, 1])
+        date_range = filter_col.date_input("📅 Välj tidsperiod", [min_date, max_date])
+        
+        if len(date_range) == 2:
+            start_date, end_date = date_range
+        else:
+            start_date, end_date = date_range[0], date_range[0]
+            
+        # اعمال فیلتر زمانی
+        mask = (df_dev['Datum'].dt.date >= start_date) & (df_dev['Datum'].dt.date <= end_date)
+        filtered_df = df_dev[mask].copy()
+        
+        # KPIs
+        # For financial values, we merge with df_insats to get the price per unit
+        df_insats = data.get('df_insats', pd.DataFrame())
+        
+        if not df_insats.empty and 'Sl' in df_insats.columns and 'Pris (Kr)' in df_insats.columns:
+            df_insats_prices = df_insats[['Sl', 'Pris (Kr)', 'Vikt/Pcs']].copy()
+            df_insats_prices['Sl'] = df_insats_prices['Sl'].astype(str)
+            filtered_df['SI_Code'] = filtered_df['SI_Code'].astype(str)
+            
+            merged_dev = pd.merge(filtered_df, df_insats_prices, left_on='SI_Code', right_on='Sl', how='left')
+            
+            # Calculate Base Price (price per base unit, e.g., per gram if Vikt/Pcs exists)
+            merged_dev['Vikt/Pcs'] = pd.to_numeric(merged_dev['Vikt/Pcs'], errors='coerce').fillna(1.0)
+            merged_dev['Pris (Kr)'] = pd.to_numeric(merged_dev['Pris (Kr)'], errors='coerce').fillna(0.0)
+            merged_dev['Base_Price'] = merged_dev['Pris (Kr)'] / merged_dev['Vikt/Pcs']
+            
+            # Calculate Financial Deviation
+            merged_dev['Financial_Deviation'] = merged_dev['Deviation'] * merged_dev['Base_Price']
+            
+            total_shortage_val = merged_dev[merged_dev['Deviation'] < 0]['Financial_Deviation'].sum()
+            total_surplus_val = merged_dev[merged_dev['Deviation'] > 0]['Financial_Deviation'].sum()
+        else:
+            total_shortage_val = 0.0
+            total_surplus_val = 0.0
+            
+        total_checks = len(filtered_df)
+        
+        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1.metric("Antal kontroller", total_checks)
+        kpi2.metric("Värde av svinn (Negativ)", f"{total_shortage_val:,.2f} Kr")
+        kpi3.metric("Värde av överskott (Positiv)", f"{total_surplus_val:,.2f} Kr")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # گرافیک و جدول
+        st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
+        st.subheader("Avvikelser per artikel")
+        
+        if not filtered_df.empty:
+            # محاسبه مجموع انحراف برای هر کالا
+            agg_df = filtered_df.groupby('Artikel')['Deviation'].sum().reset_index()
+            # مرتب‌سازی برای نمایش بهتر
+            agg_df = agg_df.sort_values(by='Deviation')
+            
+            # Use Plotly for custom coloring based on positive/negative values
+            import plotly.express as px # type: ignore
+            
+            fig = px.bar(
+                agg_df, 
+                x='Artikel', 
+                y='Deviation',
+                color='Deviation',
+                color_continuous_scale=[(0, '#D32F2F'), (0.5, '#D32F2F'), (0.5, '#388E3C'), (1, '#388E3C')],
+                color_continuous_midpoint=0
+            )
+            fig.update_layout(
+                showlegend=False,
+                coloraxis_showscale=False,
+                margin=dict(l=20, r=20, t=20, b=20),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)'
+            )
+            fig.update_traces(hovertemplate='<b>%{x}</b><br>Avvikelse: %{y:,.2f}<extra></extra>')
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Inga avvikelser hittades i den valda perioden.")
+            
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # جدول کامل لاگ‌ها
+        st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
+        st.subheader("Historik för stickprov")
+        
+        if not filtered_df.empty:
+            # فرمت تاریخ برای نمایش
+            filtered_df['Datum'] = filtered_df['Datum'].dt.strftime('%Y-%m-%d')
+            
+            def style_deviation(val):
+                try:
+                    v = float(val)
+                    if v < 0:
+                        return 'color: #D32F2F; font-weight: bold;'
+                    elif v > 0:
+                        return 'color: #388E3C; font-weight: bold;'
+                    return ''
+                except:
+                    return ''
+
+            display_cols = ['Datum', 'SI_Code', 'Artikel', 'System_Stock', 'Actual_Stock', 'Deviation', 'Note']
+            existing_cols = [c for c in display_cols if c in filtered_df.columns]
+            
+            st.dataframe(
+                filtered_df[existing_cols].style.map(style_deviation, subset=['Deviation']),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "System_Stock": st.column_config.NumberColumn("Systemsaldo", format="%,.2f"),
+                    "Actual_Stock": st.column_config.NumberColumn("Fysiskt saldo", format="%,.2f"),
+                    "Deviation": st.column_config.NumberColumn("Avvikelse", format="%,.2f"),
+                    "SI_Code": st.column_config.TextColumn("SI-kod"),
+                    "Note": st.column_config.TextColumn("Anmärkning")
+                }
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
+
 
 # ==============================================================================
 # PAGE 5: PERFECTLY ALIGNED BOM BUILDER (Metrics right above Recipe Canvas)
@@ -917,7 +1160,7 @@ elif selected_page == "⚙️ Inställningar":
         st.cache_data.clear()
         
         # Clear session state variables that might hold old data/baskets
-        keys_to_clear = ['inbound_basket', 'production_basket', 'insats_basket', 'bom_components']
+        keys_to_clear = ['inbound_basket', 'production_basket', 'insats_basket', 'bom_components', 'stickprov_basket']
         for key in keys_to_clear:
             if key in st.session_state:
                 st.session_state[key] = []
