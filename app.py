@@ -485,7 +485,7 @@ elif selected_page == "📥 Registrera Inleverans":
     st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
     
     with st.form("inbound_form", clear_on_submit=True):
-        col1, col2, col3 = st.columns([2, 2, 2])
+        col1, col2 = st.columns([2, 3])
         with col1:
             entry_date = st.date_input("Inleveransdatum", date.today(), help=HELP_TEXTS["inbound_date"])
         
@@ -501,8 +501,24 @@ elif selected_page == "📥 Registrera Inleverans":
             item_options = {create_inbound_label(row): row for _, row in data['df_insats'].iterrows()}
             selected_item_str = st.selectbox("Välj artikel / SI-kod", options=list(item_options.keys()), help=HELP_TEXTS["inbound_item"])
             selected_item = item_options[selected_item_str]
+            
+        unique_suppliers = sorted(data['df_insats']['Leverantör'].dropna().unique()) if not data['df_insats'].empty else []
         
-        with col3:
+        col_sup, col_qty = st.columns([3, 2])
+        
+        with col_sup:
+            default_supplier = selected_item.get('Leverantör', '')
+            supplier_options = unique_suppliers
+            
+            final_supplier = st.selectbox(
+                "Leverantör", 
+                options=supplier_options, 
+                index=supplier_options.index(default_supplier) if default_supplier in supplier_options else 0,
+                key="inbound_supplier_select",
+                help="Välj vilken leverantör denna inleverans kommer ifrån"
+            )
+            
+        with col_qty:
             pkg_qty = st.number_input("Antal förpackningar", min_value=1.0, step=1.0, help=HELP_TEXTS["inbound_pkg_qty"])
         
         col_submit1, col_submit2 = st.columns([3, 1])
@@ -516,7 +532,10 @@ elif selected_page == "📥 Registrera Inleverans":
         
         with col_submit2:
             if st.form_submit_button("➕ Lägg till", type="primary"):
-                new_row = [str(entry_date), str(selected_item['Sl']), selected_item['Insatsvara'], pkg_qty, total_base]
+                # If they opened the text field but wrote nothing, default back to original or blank
+                if not final_supplier:
+                    final_supplier = "Okänd"
+                new_row = [str(entry_date), str(selected_item['Sl']), selected_item['Insatsvara'], pkg_qty, total_base, final_supplier]
                 st.session_state.inbound_basket.append(new_row)
                 st.rerun()
                 
@@ -526,13 +545,20 @@ elif selected_page == "📥 Registrera Inleverans":
         st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
         st.subheader("Poster att spara")
         for i, row in enumerate(st.session_state.inbound_basket):
-            row_cols = st.columns([2, 2, 4, 1, 2, 1])
-            row_cols[0].write(row[0])
-            row_cols[1].write(row[1])
-            row_cols[2].write(row[2])
-            row_cols[3].write(row[3])
-            row_cols[4].write(f"{row[4]:,.2f}g")
-            if row_cols[5].button("🗑️", key=f"del_inbound_{i}"):
+            row_cols = st.columns([2, 1, 3, 1, 2, 2, 1])
+            row_cols[0].write(row[0]) # Date
+            row_cols[1].write(row[1]) # SI
+            row_cols[2].write(row[2]) # Artikel
+            row_cols[3].write(row[3]) # Qty
+            row_cols[4].write(f"{row[4]:,.2f}g") # Base Qty
+            
+            # Handling older basket items that might not have a supplier appended
+            if len(row) > 5:
+                row_cols[5].write(row[5]) # Supplier
+            else:
+                row_cols[5].write("-")
+                
+            if row_cols[6].button("🗑️", key=f"del_inbound_{i}"):
                 st.session_state.inbound_basket.pop(i)
                 st.rerun()
 
@@ -890,18 +916,20 @@ elif selected_page == "➕ Lägg till ny artikel":
             insats_name = cols[0].text_input("Artikelnamn", help=HELP_TEXTS["new_insats_name"])
 
             unique_types = sorted(data['df_insats']['Typ'].dropna().unique()) if not data['df_insats'].empty else []
-            type_options = unique_types + ["--- Ange ny ---"]
-            selected_type = cols[1].selectbox("Typ", options=type_options, help=HELP_TEXTS["new_insats_type"])
-            insats_type = cols[1].text_input("Ange ny typ:", key="new_type_input") if selected_type == "--- Ange ny ---" else selected_type
+            selected_type = cols[1].selectbox("Typ (välj befintlig)", options=unique_types, help=HELP_TEXTS["new_insats_type"])
+            insats_type_new = cols[1].text_input("Eller skriv in ny typ:", help="Fyll i denna om du vill skapa en ny typ")
+            
+            insats_type = insats_type_new.strip() if insats_type_new.strip() else selected_type
 
             vikt_pcs = cols[0].number_input("Vikt/Pcs (om typ är 'g')", min_value=0.0, format="%.2f", help=HELP_TEXTS["new_insats_vikt_pcs"])
             initial_stock = cols[1].number_input("Startsaldo", min_value=0.0, step=1.0, help=HELP_TEXTS["new_insats_initial_stock"])
             price = cols[0].number_input("Pris (Kr)", min_value=0.0, format="%.2f", help=HELP_TEXTS["new_insats_price"])
 
             unique_suppliers = sorted(data['df_insats']['Leverantör'].dropna().unique()) if not data['df_insats'].empty else []
-            supplier_options = unique_suppliers + ["--- Ange ny ---"]
-            selected_supplier = cols[1].selectbox("Leverantör", options=supplier_options, help=HELP_TEXTS["new_insats_supplier"])
-            supplier = cols[1].text_input("Ange ny leverantör:", key="new_supplier_input") if selected_supplier == "--- Ange ny ---" else selected_supplier
+            selected_supplier = cols[1].selectbox("Leverantör (välj befintlig)", options=unique_suppliers, help=HELP_TEXTS["new_insats_supplier"])
+            supplier_new = cols[1].text_input("Eller skriv in ny leverantör:", help="Fyll i denna om du vill lägga till en ny leverantör")
+            
+            supplier = supplier_new.strip() if supplier_new.strip() else selected_supplier
 
             if st.form_submit_button("➕ Lägg till", type="primary"):
                 if insats_name:
@@ -1065,19 +1093,36 @@ elif selected_page == "📈 Inleveransrapport":
         st.warning("Ingen inleveransdata tillgänglig för analys.")
     else:
         # تغییر نام ستون‌ها با توجه به ایندکس برای اطمینان از یکپارچگی
-        df_inbound.columns = ['Datum', 'SI_Code', 'Artikel', 'Antal_Förpackningar', 'Total_Basmängd']
-        
+        has_inbound_supplier = len(df_inbound.columns) >= 6
+        if has_inbound_supplier:
+            # We assume column 6 is the Supplier, taking first 6 cols
+            df_inbound = df_inbound.iloc[:, :6].copy()
+            df_inbound.columns = ['Datum', 'SI_Code', 'Artikel', 'Antal_Förpackningar', 'Total_Basmängd', 'Leverantör_Inbound']
+        else:
+            df_inbound = df_inbound.iloc[:, :5].copy()
+            df_inbound.columns = ['Datum', 'SI_Code', 'Artikel', 'Antal_Förpackningar', 'Total_Basmängd']
+            
         # تبدیل فرمت‌ها و ترکیب (Join) داده‌های ورودی با داده‌های کالاها
         df_inbound['SI_Code'] = df_inbound['SI_Code'].astype(str)
         df_insats['Sl'] = df_insats['Sl'].astype(str)
         
+        # Only merge Supplier from Insats if it's not present in Inbound log
+        merge_cols = ['Sl', 'Typ', 'Pris (Kr)']
+        if not has_inbound_supplier:
+            merge_cols.append('Leverantör')
+            
         merged_df = pd.merge(
             df_inbound, 
-            df_insats[['Sl', 'Typ', 'Leverantör', 'Pris (Kr)']], 
+            df_insats[merge_cols], 
             left_on='SI_Code', 
             right_on='Sl', 
             how='left'
         )
+        
+        # Resolve Supplier column
+        if has_inbound_supplier:
+            merged_df['Leverantör'] = merged_df['Leverantör_Inbound']
+            merged_df = merged_df.drop(columns=['Leverantör_Inbound'])
         
         # محاسبه مبلغ 
         merged_df['Antal_Förpackningar'] = pd.to_numeric(merged_df['Antal_Förpackningar'], errors='coerce').fillna(0)
