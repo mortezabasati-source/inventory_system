@@ -351,8 +351,8 @@ else:
         "📥 Registrera Inleverans",
         "🏭 Registrera Daglig Produktion",    
         "📝 Registrera Stickprov",
-        "📉 Avvikelserapport",
         "➕ Lägg till ny artikel",
+        "📉 Avvikelserapport",
         "📈 Inleveransrapport",
         "⚙️ Inställningar"
     ]
@@ -475,6 +475,116 @@ elif selected_page == "💰 Marginaler":
             },
             hide_index=True
         )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ---------------------------------------------------------
+        # NEW SECTION: Ingredient Visualization (BOM Breakdown)
+        # ---------------------------------------------------------
+        st.markdown("### 🔍 Analys av produktens ingredienser")
+        st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
+        
+        # Dropdown for selecting a product
+        product_options = margin_df['Produkt_namn'].tolist()
+        selected_product_name = st.selectbox("Välj produkt för att se fördelning av kostnader:", product_options)
+        
+        if selected_product_name:
+            selected_product_id = margin_df[margin_df['Produkt_namn'] == selected_product_name]['Produkt_id'].values[0]
+            
+            # Filter BOM and Insats data
+            df_bom = data['df_bom'].copy()
+            df_bom['Produkt_id'] = df_bom['Produkt_id'].astype(str)
+            prod_bom = df_bom[df_bom['Produkt_id'] == str(selected_product_id)].copy()
+            
+            if not prod_bom.empty:
+                df_insats = data['df_insats'].copy()
+                df_insats['Sl'] = df_insats['Sl'].astype(str)
+                
+                # Merge BOM with Raw Materials to get prices
+                merged_bom = pd.merge(prod_bom, df_insats[['Sl', 'Insatsvara', 'Vikt/Pcs', 'Pris (Kr)', 'Typ']], left_on='SI', right_on='Sl', how='left')
+                
+                # Calculate costs for each ingredient
+                merged_bom['Vikt/Pcs'] = pd.to_numeric(merged_bom['Vikt/Pcs'], errors='coerce').fillna(1.0)
+                merged_bom['Pris (Kr)'] = pd.to_numeric(merged_bom['Pris (Kr)'], errors='coerce').fillna(0.0)
+                merged_bom['Förbrukning'] = pd.to_numeric(merged_bom['Förbrukning'], errors='coerce').fillna(0.0)
+                
+                # Logic to calculate base price per unit
+                merged_bom['Enhetspris'] = merged_bom['Pris (Kr)'] / merged_bom['Vikt/Pcs']
+                merged_bom['Total Kostnad'] = merged_bom['Förbrukning'] * merged_bom['Enhetspris']
+                
+                # Layout: Table on the left, Chart on the right
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    st.markdown("##### 📋 Recept / Innehåll")
+                    
+                    # Both dataframes might have had an 'Insatsvara' column before merge.
+                    # pandas typically renames them to 'Insatsvara_x' and 'Insatsvara_y' 
+                    # We dynamically check which one is available.
+                    insats_col_name = 'Insatsvara_y' if 'Insatsvara_y' in merged_bom.columns else ('Insatsvara_x' if 'Insatsvara_x' in merged_bom.columns else 'Insatsvara')
+                    
+                    display_bom = merged_bom[[insats_col_name, 'Förbrukning', 'Enhet', 'Total Kostnad']].copy()
+                    display_bom.rename(columns={insats_col_name: 'Ingrediens'}, inplace=True)
+                    
+                    st.dataframe(
+                        display_bom,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Förbrukning": st.column_config.NumberColumn(format="%,.2f"),
+                            "Total Kostnad": st.column_config.NumberColumn(format="%.2f kr")
+                        }
+                    )
+                
+                with col2:
+                    st.markdown("##### 📊 Kostnadsfördelning")
+                    import plotly.express as px # type: ignore
+                    import plotly.graph_objects as go # type: ignore
+                    
+                    # Ensure utpris is numeric
+                    utpris_val = float(margin_df[margin_df['Produkt_id'] == selected_product_id]['Utpris'].values[0])
+                    total_cost = merged_bom['Total Kostnad'].sum()
+                    margin_val = utpris_val - total_cost
+                    margin_pct = (margin_val / utpris_val * 100) if utpris_val > 0 else 0
+                    
+                    # We create a donut chart where the pieces are ingredients, 
+                    # and we add an extra piece for the "Margin" (Vinst) so the total pie = Utpris
+                    
+                    # Prepare data for plotting
+                    plot_data = merged_bom[[insats_col_name, 'Total Kostnad']].copy()
+                    plot_data.rename(columns={insats_col_name: 'Kategori', 'Total Kostnad': 'Värde'}, inplace=True)
+                    
+                    # Append Margin as a slice if Utpris > Total Cost
+                    if margin_val > 0:
+                        margin_row = pd.DataFrame([{'Kategori': 'Vinst (Marginal)', 'Värde': margin_val}])
+                        plot_data = pd.concat([plot_data, margin_row], ignore_index=True)
+                    
+                    # Set colors: Pastel colors for ingredients, distinct green for Margin
+                    colors = px.colors.qualitative.Pastel
+                    color_map = {row['Kategori']: colors[i % len(colors)] for i, row in plot_data.iterrows() if row['Kategori'] != 'Vinst (Marginal)'}
+                    color_map['Vinst (Marginal)'] = '#D4EDDA' # Light green for profit
+                    
+                    fig = px.pie(
+                        plot_data, 
+                        values='Värde', 
+                        names='Kategori', 
+                        hole=0.55,
+                        color='Kategori',
+                        color_discrete_map=color_map
+                    )
+                    
+                    # Add central text showing Utpris and Margin %
+                    fig.update_layout(
+                        margin=dict(t=0, b=0, l=0, r=0),
+                        annotations=[dict(text=f"<b>Utpris</b><br>{utpris_val:.2f} kr<br><span style='color:#0E4722; font-size:12px;'>Marginal: {margin_pct:.1f}%</span>", x=0.5, y=0.5, font_size=16, showarrow=False)]
+                    )
+                    
+                    # Format hover info
+                    fig.update_traces(hovertemplate='<b>%{label}</b><br>Belopp: %{value:.2f} kr<br>Andel av utpris: %{percent}<extra></extra>')
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Ingen BOM (recept) hittades för denna produkt.")
+                
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
@@ -856,9 +966,30 @@ elif selected_page == "📉 Avvikelserapport":
         st.subheader("Historik för stickprov")
         
         if not filtered_df.empty:
+            if 'Financial_Deviation' in merged_dev.columns:
+                # Need to ensure Datum is the same type in both before merging
+                filtered_df['Datum'] = pd.to_datetime(filtered_df['Datum'])
+                merged_dev['Datum'] = pd.to_datetime(merged_dev['Datum'])
+                
+                filtered_df = pd.merge(
+                    filtered_df, 
+                    merged_dev[['Datum', 'SI_Code', 'Financial_Deviation', 'Vikt/Pcs']], 
+                    on=['Datum', 'SI_Code'], 
+                    how='left'
+                ).drop_duplicates()
+                
             # فرمت تاریخ برای نمایش
             filtered_df['Datum'] = filtered_df['Datum'].dt.strftime('%Y-%m-%d')
             
+            # تبدیل انحراف به کیلوگرم (با فرض اینکه انحراف به گرم ثبت شده است)
+            def calculate_display_dev(row):
+                # If deviation is based on pieces/pkgs, it remains as is, but typically weight based items are in 'g'
+                return row['Deviation'] / 1000.0
+                
+            filtered_df['Deviation'] = filtered_df.apply(calculate_display_dev, axis=1)
+            filtered_df['System_Stock'] = filtered_df['System_Stock'] / 1000.0
+            filtered_df['Actual_Stock'] = filtered_df['Actual_Stock'] / 1000.0
+
             def style_deviation(val):
                 try:
                     v = float(val)
@@ -869,18 +1000,30 @@ elif selected_page == "📉 Avvikelserapport":
                     return ''
                 except:
                     return ''
+            
+            def style_money(val):
+                try:
+                    v = float(val)
+                    if v < 0:
+                        return 'color: #D32F2F; font-weight: bold;'
+                    elif v > 0:
+                        return 'color: #388E3C; font-weight: bold;'
+                    return ''
+                except:
+                    return ''
 
-            display_cols = ['Datum', 'SI_Code', 'Artikel', 'System_Stock', 'Actual_Stock', 'Deviation', 'Note']
+            display_cols = ['Datum', 'SI_Code', 'Artikel', 'System_Stock', 'Actual_Stock', 'Deviation', 'Financial_Deviation', 'Note']
             existing_cols = [c for c in display_cols if c in filtered_df.columns]
             
             st.dataframe(
-                filtered_df[existing_cols].style.map(style_deviation, subset=['Deviation']),
+                filtered_df[existing_cols].style.map(style_deviation, subset=['Deviation']).map(style_money, subset=['Financial_Deviation'] if 'Financial_Deviation' in existing_cols else []),
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "System_Stock": st.column_config.NumberColumn("Systemsaldo", format="%,.2f"),
-                    "Actual_Stock": st.column_config.NumberColumn("Fysiskt saldo", format="%,.2f"),
-                    "Deviation": st.column_config.NumberColumn("Avvikelse", format="%,.2f"),
+                    "System_Stock": st.column_config.NumberColumn("Systemsaldo (kg/st)", format="%,.3f"),
+                    "Actual_Stock": st.column_config.NumberColumn("Fysiskt saldo (kg/st)", format="%,.3f"),
+                    "Deviation": st.column_config.NumberColumn("Avvikelse (kg/st)", format="%,.3f"),
+                    "Financial_Deviation": st.column_config.NumberColumn("Värde (Kr)", format="%,.2f kr"),
                     "SI_Code": st.column_config.TextColumn("SI-kod"),
                     "Note": st.column_config.TextColumn("Anmärkning")
                 }
