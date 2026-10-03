@@ -542,6 +542,7 @@ elif selected_page == "💰 Marginaler":
                     
                     # Ensure utpris is numeric
                     utpris_val = float(margin_df[margin_df['Produkt_id'] == selected_product_id]['Utpris'].values[0])
+                    kostpris_val = float(margin_df[margin_df['Produkt_id'] == selected_product_id]['Kostpris'].values[0])
                     total_cost = merged_bom['Total Kostnad'].sum()
                     margin_val = utpris_val - total_cost
                     margin_pct = (margin_val / utpris_val * 100) if utpris_val > 0 else 0
@@ -572,10 +573,13 @@ elif selected_page == "💰 Marginaler":
                         color_discrete_map=color_map
                     )
                     
-                    # Add central text showing Utpris and Margin %
+                    # Add central text showing Utpris, Kostpris and Margin %
                     fig.update_layout(
                         margin=dict(t=0, b=0, l=0, r=0),
-                        annotations=[dict(text=f"<b>Utpris</b><br>{utpris_val:.2f} kr<br><span style='color:#0E4722; font-size:12px;'>Marginal: {margin_pct:.1f}%</span>", x=0.5, y=0.5, font_size=16, showarrow=False)]
+                        annotations=[dict(
+                            text=f"<b>Utpris</b><br>{utpris_val:.2f} kr<br><span style='color:#555555; font-size:12px;'>Kostpris: {kostpris_val:.2f} kr</span><br><span style='color:#0E4722; font-size:12px;'>Marginal: {margin_pct:.1f}%</span>", 
+                            x=0.5, y=0.5, font_size=16, showarrow=False
+                        )]
                     )
                     
                     # Format hover info
