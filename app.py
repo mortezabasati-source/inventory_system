@@ -15,6 +15,7 @@ from builtins import Exception
 sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
 from modules.inventory_engine import calculate_current_stock
 from modules.gsheet_connector import load_sheet_data, append_rows_to_sheet
+from modules.idle_session import render_idle_guard
 
 # --- Database & Config Settings ---
 SPREADSHEET_NAME = "Inventory_System_DB"
@@ -223,6 +224,10 @@ def get_next_sl(df_insats: pd.DataFrame) -> int:
 data = load_all_data()
 
 # Initialize session state lists for batch processing baskets
+if st.session_state.pop('_reset_new_product', False):
+    for field in ('new_product_id', 'new_product_name', 'new_product_price'):
+        st.session_state.pop(field, None)
+
 if 'inbound_basket' not in st.session_state:
     st.session_state['inbound_basket'] = []
 if 'production_basket' not in st.session_state:
@@ -1110,9 +1115,9 @@ elif selected_page == "➕ Lägg till ny artikel":
         st.markdown("##### 📌 Steg 1: Produktinformation")
         
         prod_cols = st.columns([2, 3, 2])
-        product_id_input = prod_cols[0].text_input("Produkt-ID (unikt)", help=HELP_TEXTS["new_prod_id"])
-        product_name = prod_cols[1].text_input("Produktnamn", help=HELP_TEXTS["new_prod_name"])
-        utpris_input = prod_cols[2].number_input("Utpris (kr)", min_value=0.0, format="%.2f", help=HELP_TEXTS["new_prod_utpris"])
+        product_id_input = prod_cols[0].text_input("Produkt-ID (unikt)", key="new_product_id", help=HELP_TEXTS["new_prod_id"])
+        product_name = prod_cols[1].text_input("Produktnamn", key="new_product_name", help=HELP_TEXTS["new_prod_name"])
+        utpris_input = prod_cols[2].number_input("Utpris (kr)", key="new_product_price", min_value=0.0, format="%.2f", help=HELP_TEXTS["new_prod_utpris"])
         st.markdown('</div>', unsafe_allow_html=True)
 
         if 'bom_components' not in st.session_state:
@@ -1223,6 +1228,8 @@ elif selected_page == "➕ Lägg till ny artikel":
                 st.session_state.bom_components = []
                 st.cache_data.clear()
                 st.success(f"✅ Produkt '{product_name}' har sparats!")
+                st.session_state['_reset_new_product'] = True
+                st.rerun()
             else:
                 st.error("⛔ Felaktig nyckel.")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1362,3 +1369,6 @@ elif selected_page == "⚙️ Inställningar":
         st.rerun()
         
     st.markdown('</div>', unsafe_allow_html=True)
+
+# Mount after page processing so the guard sees the latest baskets and draft values.
+render_idle_guard()
