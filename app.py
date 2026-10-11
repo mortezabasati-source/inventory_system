@@ -13,7 +13,7 @@ from builtins import Exception
 
 # Ensure imports reference the local modules package to satisfy linters
 sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
-from modules.product_cost import calculate_product_cost_and_margin
+from modules.product_cost import calculate_product_cost_and_margin, calculate_ingredient_breakdown
 from modules.inventory_engine import calculate_current_stock
 from modules.gsheet_connector import load_sheet_data, append_rows_to_sheet
 from modules.idle_session import render_idle_guard
@@ -359,11 +359,11 @@ if selected_page == "📊 Aktuellt Lagersaldo":
         styled_df,
         use_container_width=True,
         column_config={
-            "Mängd/Enhet": st.column_config.NumberColumn(format="%,.2f"),
-            "Startsaldo": st.column_config.NumberColumn(format="%,.2f"),
-            "Inlevererat": st.column_config.NumberColumn(format="%,.2f"),
-            "Förbrukat": st.column_config.NumberColumn(format="%,.2f"),
-            "Aktuellt Saldo": st.column_config.NumberColumn(format="%,.2f"),
+            "Mängd/Enhet": st.column_config.NumberColumn(format="%.2f"),
+            "Startsaldo": st.column_config.NumberColumn(format="%.2f"),
+            "Inlevererat": st.column_config.NumberColumn(format="%.2f"),
+            "Förbrukat": st.column_config.NumberColumn(format="%.2f"),
+            "Aktuellt Saldo": st.column_config.NumberColumn(format="%.2f"),
         },
         hide_index=True
     )
@@ -399,7 +399,7 @@ elif selected_page == "💰 Marginaler":
 
         st.dataframe(
             styled_df,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Utpris": st.column_config.NumberColumn(format="%.2f kr"),
                 "Kostpris": st.column_config.NumberColumn(format="%.2f kr"),
@@ -415,54 +415,34 @@ elif selected_page == "💰 Marginaler":
         st.markdown("### 🔍 Analys av produktens ingredienser")
         st.markdown('<div class="smartlager-card">', unsafe_allow_html=True)
         
-        # Dropdown for selecting a product
-        product_options = margin_df['Produkt_namn'].tolist()
-        selected_product_name = st.selectbox("Välj produkt för att se fördelning av kostnader:", product_options)
-        
-        if selected_product_name:
-            selected_product_id = margin_df[margin_df['Produkt_namn'] == selected_product_name]['Produkt_id'].values[0]
-            
-            # Filter BOM and Insats data
-            df_bom = data['df_bom'].copy()
-            df_bom['Produkt_id'] = df_bom['Produkt_id'].astype(str)
-            prod_bom = df_bom[df_bom['Produkt_id'] == str(selected_product_id)].copy()
-            
-            if not prod_bom.empty:
-                df_insats = data['df_insats'].copy()
-                df_insats['Sl'] = df_insats['Sl'].astype(str)
-                
-                # Merge BOM with Raw Materials to get prices
-                merged_bom = pd.merge(prod_bom, df_insats[['Sl', 'Insatsvara', 'Vikt/Pcs', 'Pris (Kr)', 'Typ']], left_on='SI', right_on='Sl', how='left')
-                
-                # Calculate costs for each ingredient
-                merged_bom['Vikt/Pcs'] = pd.to_numeric(merged_bom['Vikt/Pcs'], errors='coerce').fillna(1.0)
-                merged_bom['Pris (Kr)'] = pd.to_numeric(merged_bom['Pris (Kr)'], errors='coerce').fillna(0.0)
-                merged_bom['Förbrukning'] = pd.to_numeric(merged_bom['Förbrukning'], errors='coerce').fillna(0.0)
-                
-                # Logic to calculate base price per unit
-                merged_bom['Enhetspris'] = merged_bom['Pris (Kr)'] / merged_bom['Vikt/Pcs']
-                merged_bom['Total Kostnad'] = merged_bom['Förbrukning'] * merged_bom['Enhetspris']
-                
+        product_names = dict(zip(margin_df['Produkt_id'], margin_df['Produkt_namn']))
+        selected_product_id = st.selectbox(
+            "Välj produkt för att se fördelning av kostnader:",
+            options=margin_df['Produkt_id'].tolist(),
+            format_func=lambda product_id: f"{product_names[product_id]} ({product_id})",
+            key="margin_ingredient_product",
+        )
+
+        if selected_product_id is not None:
+            merged_bom = calculate_ingredient_breakdown(
+                selected_product_id, data['df_products'], data['df_bom'], data['df_insats']
+            )
+            if not merged_bom.empty:
                 # Layout: Table on the left, Chart on the right
                 col1, col2 = st.columns([1, 1])
                 
                 with col1:
                     st.markdown("##### 📋 Recept / Innehåll")
                     
-                    # Both dataframes might have had an 'Insatsvara' column before merge.
-                    # pandas typically renames them to 'Insatsvara_x' and 'Insatsvara_y' 
-                    # We dynamically check which one is available.
-                    insats_col_name = 'Insatsvara_y' if 'Insatsvara_y' in merged_bom.columns else ('Insatsvara_x' if 'Insatsvara_x' in merged_bom.columns else 'Insatsvara')
-                    
-                    display_bom = merged_bom[[insats_col_name, 'Förbrukning', 'Enhet', 'Total Kostnad']].copy()
-                    display_bom.rename(columns={insats_col_name: 'Ingrediens'}, inplace=True)
-                    
+                    insats_col_name = 'Ingrediens'
+                    display_bom = merged_bom.copy()
+
                     st.dataframe(
                         display_bom,
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                         column_config={
-                            "Förbrukning": st.column_config.NumberColumn(format="%,.2f"),
+                            "Förbrukning": st.column_config.NumberColumn(format="%.2f"),
                             "Total Kostnad": st.column_config.NumberColumn(format="%.2f kr")
                         }
                     )
@@ -470,12 +450,11 @@ elif selected_page == "💰 Marginaler":
                 with col2:
                     st.markdown("##### 📊 Kostnadsfördelning")
                     import plotly.express as px # type: ignore
-                    import plotly.graph_objects as go # type: ignore
                     
                     # Ensure utpris is numeric
                     utpris_val = float(margin_df[margin_df['Produkt_id'] == selected_product_id]['Utpris'].values[0])
                     kostpris_val = float(margin_df[margin_df['Produkt_id'] == selected_product_id]['Kostpris'].values[0])
-                    total_cost = merged_bom['Total Kostnad'].sum()
+                    total_cost = kostpris_val
                     margin_val = utpris_val - total_cost
                     margin_pct = (margin_val / utpris_val * 100) if utpris_val > 0 else 0
                     
@@ -515,9 +494,9 @@ elif selected_page == "💰 Marginaler":
                     )
                     
                     # Format hover info
-                    fig.update_traces(hovertemplate='<b>%{label}</b><br>Belopp: %{value:.2f} kr<br>Andel av utpris: %{percent}<extra></extra>')
+                    fig.update_traces(hovertemplate='<b>%{label}</b><br>Belopp: %{value:.2f} kr<br>Andel av diagrammet: %{percent}<extra></extra>')
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
             else:
                 st.info("Ingen BOM (recept) hittades för denna produkt.")
                 
@@ -1265,9 +1244,9 @@ elif selected_page == "📈 Inleveransrapport":
             use_container_width=True, 
             hide_index=True,
             column_config={
-                "Antal_Förpackningar": st.column_config.NumberColumn(format="%,.2f"),
-                "Pris (Kr)": st.column_config.NumberColumn(format="%,.2f"),
-                "Totalt_Belopp": st.column_config.NumberColumn(format="%,.2f"),
+                "Antal_Förpackningar": st.column_config.NumberColumn(format="%.2f"),
+                "Pris (Kr)": st.column_config.NumberColumn(format="%.2f"),
+                "Totalt_Belopp": st.column_config.NumberColumn(format="%.2f"),
             }
         )
 

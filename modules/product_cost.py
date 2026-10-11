@@ -82,3 +82,23 @@ def calculate_product_cost_and_margin(df_products: pd.DataFrame, df_bom: pd.Data
     )
     return df_products
 
+
+
+def calculate_ingredient_breakdown(product_id, df_products, df_bom, df_insats):
+    """Price direct recipe rows using the same recursive rules as product margins."""
+    recipe = df_bom[df_bom['Produkt_id'].astype(str) == str(product_id)].copy()
+    if recipe.empty:
+        return pd.DataFrame(columns=['Ingrediens', 'Förbrukning', 'Enhet', 'Total Kostnad'])
+    recipe['SI'] = recipe['SI'].astype(str)
+    items = pd.DataFrame({'Produkt_id': recipe['SI'].unique()})
+    costs = calculate_product_cost_and_margin(items, df_bom, df_insats)
+    unit_costs = costs.set_index('Produkt_id')['Kostpris']
+    names = dict(zip(df_products['Produkt_id'].astype(str), df_products['Produkt_namn']))
+    names.update(dict(zip(df_insats['Sl'].astype(str), df_insats['Insatsvara'])))
+    fallback = recipe.get('Insatsvara', recipe['SI']).fillna(recipe['SI'])
+    recipe['Ingrediens'] = recipe['SI'].map(names).fillna(fallback)
+    recipe['Förbrukning'] = pd.to_numeric(recipe['Förbrukning'], errors='coerce').fillna(0.0)
+    recipe['Total Kostnad'] = recipe['Förbrukning'] * recipe['SI'].map(unit_costs)
+    if 'Enhet' not in recipe:
+        recipe['Enhet'] = ''
+    return recipe[['Ingrediens', 'Förbrukning', 'Enhet', 'Total Kostnad']]
